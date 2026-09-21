@@ -1263,9 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "incurs"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f8d1c90cc1214e2adb0edfef175285b41a3a0f8d969476c543726d66c91dc7b"
+version = "0.9.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1289,8 +1287,6 @@ dependencies = [
 [[package]]
 name = "incurs-macros"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f09b831d2c27ab07fdbf265375f8544a182a6101c674ac42ed1e3965823b84b0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1300,8 +1296,6 @@ dependencies = [
 [[package]]
 name = "incurs-mcp-protocol"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "926ce3974a746aac8a23891122f75773c930f8c6b5fc77ae110b3d01156121be"
 dependencies = [
  "serde",
  "serde_json",

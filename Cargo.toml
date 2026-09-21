@@ -16,7 +16,7 @@ ast-grep-language = { version = "0.45.3", default-features = false, features = [
 diffy = "0.4"
 dirs = "6"
 ignore = "0.4"
-incurs = { version = "0.7.4", features = ["mcp"] }
+incurs = { version = "0.9.0", features = ["mcp"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 regex = "1"
 rusqlite = { version = "0.40.1", default-features = false, features = ["bundled"] }
@@ -33,6 +33,11 @@ toml = "0.8"
 uuid = { version = "1", features = ["serde", "v7"] }
 griz-core = { path = "crates/griz-core", version = "0.1.0" }
 griz-store = { path = "crates/griz-store", version = "0.1.0" }
+
+# Temporary: incurs 0.9.0 is unpublished (local, at ../incurs commit 3360736).
+# Remove this patch once incurs 0.9.0 is on crates.io.
+[patch.crates-io]
+incurs = { path = "../incurs/crates/incurs" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

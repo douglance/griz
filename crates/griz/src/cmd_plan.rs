@@ -46,7 +46,68 @@ pub fn plan_command() -> CommandDef {
     )
     .description("Plan edits from operations or patch text. Writes no source file; returns a plan id for diff, select, and apply.")
     .mcp(annotations::records())
+    .mcp_input_schema(plan_input_schema())
     .done()
+}
+
+/// Publishes `plan`'s MCP input schema, typed instead of derived: every
+/// declared option keeps the shape incurs would infer from its field
+/// metadata, except `ops`, whose items are one of [`Op`]'s variants or a
+/// JSON-text string for CLI callers. `$defs` schemars nests under `Op`
+/// (`Anchor`, `ByteRange`, `Occurrence`) are hoisted to this schema's own
+/// root so every `$ref` resolves within the published document.
+fn plan_input_schema() -> Value {
+    let mut op_schema = serde_json::to_value(schemars::schema_for!(Op))
+        .unwrap_or_else(|e| unreachable!("Op derives JsonSchema: {e}"));
+    let defs = op_schema
+        .as_object_mut()
+        .and_then(|schema| schema.remove("$defs"))
+        .unwrap_or_else(|| json!({}));
+    if let Some(schema) = op_schema.as_object_mut() {
+        schema.remove("$schema");
+    }
+    json!({
+        "type": "object",
+        "properties": {
+            "ops": {
+                "type": "array",
+                "description": "Operations as JSON objects, applied in order. Each is a replace, insert, create, delete, or move (or JSON text for CLI callers).",
+                "items": {
+                    "oneOf": [op_schema, { "type": "string" }],
+                },
+            },
+            "patch": {
+                "type": "string",
+                "description": "Codex patch text, or `@path` to read the patch from a file.",
+            },
+            "root": {
+                "type": "string",
+                "description": "Directory relative paths resolve from. Defaults to the current directory.",
+            },
+            "purpose": {
+                "type": "string",
+                "description": "Why this plan is being made.",
+            },
+            "idempotency_key": {
+                "type": "string",
+                "description": "Key that makes a retry return the original plan instead of a new one.",
+            },
+            "expect_edits": {
+                "type": "number",
+                "description": "Number of edits the plan must contain.",
+            },
+            "expect_files": {
+                "type": "number",
+                "description": "Number of files the plan must change.",
+            },
+            "verbosity": {
+                "type": "string",
+                "description": "Response detail: off, error, warn, info, debug, or trace.",
+            },
+        },
+        "required": ["purpose", "idempotency_key"],
+        "$defs": defs,
+    })
 }
 
 async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {

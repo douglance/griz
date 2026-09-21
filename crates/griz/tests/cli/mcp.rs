@@ -19,6 +19,22 @@ struct Mcp {
 }
 
 impl Mcp {
+    /// Starts a process and completes the initialize handshake.
+    fn ready() -> Result<Self, Box<dyn Error>> {
+        let mut mcp = Self::start()?;
+        let init = mcp.call(
+            "initialize",
+            &json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": { "name": "griz-cli-test", "version": "0.0.0" },
+            }),
+        )?;
+        assert!(init.get("result").is_some(), "{init}");
+        mcp.notify("notifications/initialized", &json!({}))?;
+        Ok(mcp)
+    }
+
     fn start() -> Result<Self, Box<dyn Error>> {
         let home = tempfile::tempdir()?;
         let mut child = Command::new(env!("CARGO_BIN_EXE_griz"))
@@ -73,17 +89,7 @@ impl Drop for Mcp {
 
 #[test]
 fn mcp_serves_each_command_as_its_own_tool() -> TestResult {
-    let mut mcp = Mcp::start()?;
-    let init = mcp.call(
-        "initialize",
-        &json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": { "name": "griz-cli-test", "version": "0.0.0" },
-        }),
-    )?;
-    assert!(init.get("result").is_some(), "{init}");
-    mcp.notify("notifications/initialized", &json!({}))?;
+    let mut mcp = Mcp::ready()?;
     let listed = mcp.call("tools/list", &json!({}))?;
     let tools = listed["result"]["tools"]
         .as_array()
@@ -98,5 +104,113 @@ fn mcp_serves_each_command_as_its_own_tool() -> TestResult {
     ];
     expected.sort_unstable();
     assert_eq!(names, expected, "{listed}");
+    Ok(())
+}
+
+/// Fetches the `plan` tool's published `inputSchema` from `tools/list`.
+fn plan_input_schema(mcp: &mut Mcp) -> Result<Value, Box<dyn Error>> {
+    let listed = mcp.call("tools/list", &json!({}))?;
+    let tools = listed["result"]["tools"]
+        .as_array()
+        .ok_or_else(|| format!("no tools in {listed}"))?;
+    let plan = tools
+        .iter()
+        .find(|tool| tool["name"] == "plan")
+        .ok_or_else(|| format!("no plan tool in {listed}"))?;
+    Ok(plan["inputSchema"].clone())
+}
+
+/// Collects every `$ref` string value anywhere in `value`.
+fn collect_refs<'a>(value: &'a Value, refs: &mut Vec<&'a str>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(r) = map.get("$ref").and_then(Value::as_str) {
+                refs.push(r);
+            }
+            map.values().for_each(|v| collect_refs(v, refs));
+        }
+        Value::Array(items) => items.iter().for_each(|v| collect_refs(v, refs)),
+        _ => {}
+    }
+}
+
+/// Every `$ref` in `schema` must resolve as a JSON pointer within it.
+fn assert_every_ref_resolves(schema: &Value) {
+    let mut refs = Vec::new();
+    collect_refs(schema, &mut refs);
+    assert!(!refs.is_empty(), "expected at least one $ref in {schema}");
+    for r in refs {
+        let pointer = r.strip_prefix('#').unwrap_or(r);
+        assert!(
+            schema.pointer(pointer).is_some(),
+            "$ref {r} does not resolve in {schema}"
+        );
+    }
+}
+
+#[test]
+fn plan_publishes_a_typed_ops_schema() -> TestResult {
+    let mut mcp = Mcp::ready()?;
+    let schema = plan_input_schema(&mut mcp)?;
+
+    for name in [
+        "ops",
+        "patch",
+        "root",
+        "purpose",
+        "idempotency_key",
+        "expect_edits",
+        "expect_files",
+        "verbosity",
+    ] {
+        assert!(
+            schema["properties"][name].is_object(),
+            "missing {name} in {schema}"
+        );
+    }
+
+    let branches = schema["properties"]["ops"]["items"]["oneOf"]
+        .as_array()
+        .ok_or_else(|| format!("ops.items has no oneOf in {schema}"))?;
+    assert!(
+        branches.iter().any(|b| b["type"] == "string"),
+        "no plain-string branch in {branches:?}"
+    );
+    let op_variants = branches
+        .iter()
+        .find_map(|b| b["oneOf"].as_array())
+        .ok_or_else(|| format!("no Op oneOf branch in {branches:?}"))?;
+    let mut kinds: Vec<&str> = op_variants
+        .iter()
+        .filter_map(|variant| variant["properties"]["op"]["const"].as_str())
+        .collect();
+    kinds.sort_unstable();
+    let mut expected = ["create", "delete", "insert", "move", "replace"];
+    expected.sort_unstable();
+    assert_eq!(kinds, expected, "{op_variants:?}");
+
+    assert_every_ref_resolves(&schema);
+    Ok(())
+}
+
+#[test]
+fn plan_call_accepts_a_typed_op_object() -> TestResult {
+    let mut mcp = Mcp::ready()?;
+    let called = mcp.call(
+        "tools/call",
+        &json!({
+            "name": "plan",
+            "arguments": {
+                "ops": [{ "op": "create", "path": "typed.txt", "text": "hi\n" }],
+                "purpose": "test",
+                "idempotency_key": "typed-op-object",
+            },
+        }),
+    )?;
+    let content = called["result"]["content"][0]["text"]
+        .as_str()
+        .ok_or_else(|| format!("no content text in {called}"))?;
+    let body: Value = serde_json::from_str(content)?;
+    assert_eq!(body["outcome"], "passed", "{body}");
     Ok(())
 }
