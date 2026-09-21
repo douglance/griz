@@ -32,5 +32,25 @@ fn non_overlapping_changes_merge_cleanly() {
 
 #[test]
 fn overlapping_changes_conflict() {
-    assert_eq!(three_way("a\n", "b\n", "c\n"), MergeOutcome::Conflict);
+    assert_eq!(
+        three_way("a\n", "b\n", "c\n"),
+        MergeOutcome::Conflict {
+            regions: vec![(1, 1)]
+        }
+    );
+}
+
+#[test]
+fn conflict_regions_locate_lines_in_current_text() {
+    let merged = three_way(
+        "same\ntarget line\nother\n",
+        "same\nplanned change\nother\n",
+        "same\nsomeone else's change\nother\n",
+    );
+    assert_eq!(
+        merged,
+        MergeOutcome::Conflict {
+            regions: vec![(2, 2)]
+        }
+    );
 }

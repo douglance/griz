@@ -101,9 +101,15 @@ pub fn operation_with(op: &Operation, outcome: Outcome, reason: Option<String>) 
             "files": op.files.len(),
             "merged": op.files.iter().filter(|file| file.merged).count(),
             "conflicts": op.conflicts.len(),
+            "merge_conflicts": op.merge_conflicts.len(),
             "recovered": op.recovered,
         }),
-        detail: json!({ "files": op.files, "conflicts": op.conflicts }),
+        detail: json!({
+            "files": op.files,
+            "conflicts": op.conflicts,
+            "merge_conflicts": op.merge_conflicts,
+            "restores": op.restores,
+        }),
         record: to_value(op),
     }
 }

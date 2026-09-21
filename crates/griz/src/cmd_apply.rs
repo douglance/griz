@@ -9,7 +9,7 @@ use crate::{
     verdict::{Outcome, Verbosity},
 };
 use griz_core::Confidence;
-use griz_store::{Absorbed, ApplyRequest, OnStale};
+use griz_store::{Absorbed, ApplyRequest, OnStale, UndoRequest};
 use incurs::command::{CommandDef, TypedContext};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -55,15 +55,7 @@ async fn apply(plan: String, options: ApplyOptions) -> Result<(Value, Outcome), 
         .min_confidence
         .as_deref()
         .map_or(Ok(Confidence::Machine), confidence)?;
-    let on_stale = match options.on_stale.as_deref() {
-        None | Some("refuse") => OnStale::Refuse,
-        Some("merge") => OnStale::Merge,
-        Some(other) => {
-            return Err(CmdError::invalid(format!(
-                "unknown on_stale `{other}`; use refuse or merge"
-            )));
-        }
-    };
+    let on_stale = parse_on_stale(options.on_stale.as_deref())?;
     let expect_files = options.expect_files;
     let mutation = Mutation {
         command: "apply",
@@ -90,6 +82,20 @@ async fn apply(plan: String, options: ApplyOptions) -> Result<(Value, Outcome), 
     .await
 }
 
+/// Parses `refuse` (default) or `merge`.
+///
+/// # Errors
+/// Returns a validation error naming the accepted values.
+fn parse_on_stale(text: Option<&str>) -> Result<OnStale, CmdError> {
+    match text {
+        None | Some("refuse") => Ok(OnStale::Refuse),
+        Some("merge") => Ok(OnStale::Merge),
+        Some(other) => Err(CmdError::invalid(format!(
+            "unknown on_stale `{other}`; use refuse or merge"
+        ))),
+    }
+}
+
 #[derive(Deserialize, incurs::Args)]
 struct OperationArgs {
     /// Operation identifier, from apply or an earlier undo.
@@ -100,6 +106,8 @@ struct OperationArgs {
 struct UndoOptions {
     /// Restore only these files. Defaults to every file the operation wrote.
     paths: Option<Vec<String>>,
+    /// When a file changed since it was written: refuse (default) or merge.
+    on_stale: Option<String>,
     /// Directory relative paths resolve from. Defaults to the current directory.
     root: Option<String>,
     /// Why the files are being restored.
@@ -118,27 +126,33 @@ pub fn undo_command() -> CommandDef {
             respond(undo(ctx.args.operation, ctx.options).await)
         },
     )
-    .description("Restore what an operation replaced, for files still exactly as it left them. An undo is itself an operation and can be undone.")
+    .description("Restore what an operation replaced, for files still exactly as it left them, or merged onto a newer text with on_stale merge. An undo is itself an operation and can be undone.")
     .mcp(annotations::writes_files())
     .done()
 }
 
-async fn undo(id: String, options: UndoOptions) -> Result<(Value, Outcome), CmdError> {
+async fn undo(operation: String, options: UndoOptions) -> Result<(Value, Outcome), CmdError> {
     let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
     let root = root(options.root.as_deref())?;
     let paths = resolve_all(&root, options.paths);
+    let on_stale = parse_on_stale(options.on_stale.as_deref())?;
     let mutation = Mutation {
         command: "undo",
         key: options.idempotency_key,
-        input: json!({ "operation": id, "paths": paths }),
+        input: json!({ "operation": operation, "paths": paths, "on_stale": on_stale }),
     };
-    let purpose = options.purpose;
+    let request = UndoRequest {
+        operation,
+        paths,
+        on_stale,
+        purpose: options.purpose,
+    };
     with_store(move |store| {
         run_mutation(
             store,
             &mutation,
             level,
-            |store| Ok(render::operation(&store.undo(&id, &paths, &purpose)?, None)),
+            |store| Ok(render::operation(&store.undo(&request)?, None)),
             |store, id, outcome| {
                 Ok(render::operation(&store.operation(id)?, None).with_outcome(outcome))
             },

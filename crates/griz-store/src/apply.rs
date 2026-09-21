@@ -1,10 +1,10 @@
 //! Apply a stored plan, or undo an earlier operation.
 
 use crate::{
-    Operation, OperationKind, OperationState, Store, StoreError,
-    execute::{Target, read_current},
+    FileWrite, Operation, OperationKind, OperationState, Store, StoreError,
+    merge::{MergePair, Resolved, blob_text, record_resolved, resolve_target},
 };
-use griz_core::{Confidence, FileChange, MergeOutcome, three_way};
+use griz_core::{Confidence, FileChange};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -28,6 +28,19 @@ pub struct ApplyRequest {
     /// Least confidence every edit must have.
     pub min_confidence: Confidence,
     /// Stale-file policy.
+    pub on_stale: OnStale,
+    /// Why the caller asked.
+    pub purpose: String,
+}
+
+/// How to undo an operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UndoRequest {
+    /// Operation to undo.
+    pub operation: String,
+    /// Restore only these files; empty restores every file the operation wrote.
+    pub paths: Vec<PathBuf>,
+    /// Stale-file policy for files changed since the operation wrote them.
     pub on_stale: OnStale,
     /// Why the caller asked.
     pub purpose: String,
@@ -59,10 +72,8 @@ impl Store {
         let _locks = self.lock_paths(&paths)?;
         let mut targets = Vec::with_capacity(changes.len());
         for change in &changes {
-            match target_for(change, request.on_stale)? {
-                Some(target) => targets.push(target),
-                None => op.conflicts.push(change.path.clone()),
-            }
+            let resolved = self.resolve_change(change, request.on_stale)?;
+            record_resolved(&mut op, &mut targets, change.path.clone(), resolved);
         }
         if !op.conflicts.is_empty() {
             return self.refuse(
@@ -74,19 +85,29 @@ impl Store {
         Ok(op)
     }
 
+    fn resolve_change(
+        &self,
+        change: &FileChange,
+        on_stale: OnStale,
+    ) -> Result<Resolved, StoreError> {
+        let pair = MergePair {
+            base_hash: change.before_hash.as_deref(),
+            base: change.before.as_deref(),
+            planned_hash: change.after_hash.as_deref(),
+            planned: change.after.as_deref(),
+        };
+        resolve_target(self, &change.path, &pair, on_stale)
+    }
+
     /// Restores the files an operation wrote, for files still exactly as it
-    /// left them. Files changed since are left alone and listed as conflicts.
+    /// left them, or merged onto a newer text when `request.on_stale` allows
+    /// it. Files left changed are left alone and listed as conflicts.
     ///
     /// # Errors
     /// Returns an error when the operation cannot be read or a write fails.
-    pub fn undo(
-        &self,
-        id: &str,
-        paths: &[PathBuf],
-        purpose: &str,
-    ) -> Result<Operation, StoreError> {
-        let original = self.operation(id)?;
-        let mut op = Operation::new(OperationKind::Undo, purpose);
+    pub fn undo(&self, request: &UndoRequest) -> Result<Operation, StoreError> {
+        let original = self.operation(&request.operation)?;
+        let mut op = Operation::new(OperationKind::Undo, &request.purpose);
         op.undoes = Some(original.id.clone());
         if original.state != OperationState::Applied {
             return self.refuse(op, "only an applied operation can be undone");
@@ -94,16 +115,14 @@ impl Store {
         let chosen: Vec<_> = original
             .files
             .iter()
-            .filter(|file| paths.is_empty() || paths.contains(&file.path))
+            .filter(|file| request.paths.is_empty() || request.paths.contains(&file.path))
             .collect();
         let locked: Vec<PathBuf> = chosen.iter().map(|file| file.path.clone()).collect();
         let _locks = self.lock_paths(&locked)?;
         let mut targets = Vec::new();
         for file in chosen {
-            match self.undo_target(file)? {
-                Some(target) => targets.push(target),
-                None => op.conflicts.push(file.path.clone()),
-            }
+            let resolved = self.undo_target(file, request.on_stale)?;
+            record_resolved(&mut op, &mut targets, file.path.clone(), resolved);
         }
         if targets.is_empty() {
             return self.refuse(op, "no file is still as the operation left it");
@@ -112,55 +131,26 @@ impl Store {
         Ok(op)
     }
 
-    /// The restore for one file, or `None` when it changed since the write.
-    fn undo_target(&self, file: &crate::FileWrite) -> Result<Option<Target>, StoreError> {
-        let (current, current_hash) = read_current(&file.path)?;
-        if current_hash != file.after_hash {
-            return Ok(None);
-        }
-        let text = file
-            .before_hash
-            .as_deref()
-            .map(|hash| self.get_blob(hash))
-            .transpose()?;
-        Ok(Some(Target {
-            path: file.path.clone(),
-            current_hash,
-            current,
-            text,
-            merged: false,
-        }))
+    /// The restore candidate for one file an operation wrote: the merge
+    /// undoes, from the text it left (`after`) back to the text it replaced
+    /// (`before`).
+    fn undo_target(&self, file: &FileWrite, on_stale: OnStale) -> Result<Resolved, StoreError> {
+        let base = blob_text(self, file.after_hash.as_deref())?;
+        let planned = blob_text(self, file.before_hash.as_deref())?;
+        let pair = MergePair {
+            base_hash: file.after_hash.as_deref(),
+            base: base.as_deref(),
+            planned_hash: file.before_hash.as_deref(),
+            planned: planned.as_deref(),
+        };
+        resolve_target(self, &file.path, &pair, on_stale)
     }
 
-    fn refuse(&self, mut op: Operation, reason: &str) -> Result<Operation, StoreError> {
+    /// Marks `op` failed with `reason`, saves it, and hands it back.
+    pub(crate) fn refuse(&self, mut op: Operation, reason: &str) -> Result<Operation, StoreError> {
         op.state = OperationState::Failed;
         op.reason = Some(reason.to_string());
         self.save_operation(&op)?;
         Ok(op)
     }
-}
-
-/// The write for one planned file, or `None` when it is stale and cannot merge.
-fn target_for(change: &FileChange, on_stale: OnStale) -> Result<Option<Target>, StoreError> {
-    let (current, current_hash) = read_current(&change.path)?;
-    let target = |text: Option<String>, merged| Target {
-        path: change.path.clone(),
-        current_hash: current_hash.clone(),
-        current: current.clone(),
-        text,
-        merged,
-    };
-    if current_hash == change.before_hash {
-        return Ok(Some(target(change.after.clone(), false)));
-    }
-    if on_stale == OnStale::Refuse {
-        return Ok(None);
-    }
-    let (Some(base), Some(planned), Some(now)) = (&change.before, &change.after, &current) else {
-        return Ok(None);
-    };
-    Ok(match three_way(base, planned, now) {
-        MergeOutcome::Clean { text } => Some(target(Some(text), true)),
-        MergeOutcome::Conflict => None,
-    })
 }

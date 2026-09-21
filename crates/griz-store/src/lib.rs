@@ -12,15 +12,19 @@ mod error;
 mod execute;
 mod journal;
 mod locks;
+mod merge;
 mod plans;
 mod receipts;
 mod recovery;
 mod write;
 
 pub use absorb::Absorbed;
-pub use apply::{ApplyRequest, OnStale};
+pub use apply::{ApplyRequest, OnStale, UndoRequest};
+pub use blobs::{blob_id, parse_blob_id};
 pub use error::StoreError;
-pub use journal::{FileWrite, Operation, OperationKind, OperationState};
+pub use journal::{
+    ConflictRegion, FileWrite, MergeConflict, Operation, OperationKind, OperationState, Restores,
+};
 pub use plans::{PlanRecord, Selection};
 pub use receipts::Claim;
 

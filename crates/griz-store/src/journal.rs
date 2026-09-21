@@ -52,6 +52,43 @@ pub struct FileWrite {
     pub merged: bool,
 }
 
+/// A conflicting line range in `current`, 1-based and inclusive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConflictRegion {
+    /// First conflicting line.
+    pub start: usize,
+    /// Last conflicting line.
+    pub end: usize,
+}
+
+/// One file a merge attempt could not resolve, carrying every text a caller
+/// needs to look at: `base`, `planned`, and `current` are blob identifiers
+/// readable with `get`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MergeConflict {
+    /// File path.
+    pub path: PathBuf,
+    /// Blob identifier of the text the plan was computed against.
+    pub base: String,
+    /// Blob identifier of the text the plan wanted to write.
+    pub planned: String,
+    /// Blob identifier of the text found on disk.
+    pub current: String,
+    /// Fingerprint of the text found on disk, in the form other commands use.
+    pub current_fingerprint: String,
+    /// Conflicting line ranges in the current text.
+    pub regions: Vec<ConflictRegion>,
+}
+
+/// The span an undo restored in one operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Restores {
+    /// Oldest operation restored, inclusive.
+    pub since: String,
+    /// Every operation the restore absorbed, oldest first.
+    pub operations: Vec<String>,
+}
+
 /// One apply or undo.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Operation {
@@ -82,6 +119,12 @@ pub struct Operation {
     /// Why the latest absorb happened.
     #[serde(default)]
     pub absorb_purpose: Option<String>,
+    /// Files whose merge attempt conflicted; each also appears in `conflicts`.
+    #[serde(default)]
+    pub merge_conflicts: Vec<MergeConflict>,
+    /// The span this operation restored, when it is a `since` restore.
+    #[serde(default)]
+    pub restores: Option<Restores>,
     /// Creation time in Unix milliseconds.
     pub created_at: i64,
 }
@@ -103,6 +146,8 @@ impl Operation {
             recovered: false,
             absorbed: Vec::new(),
             absorb_purpose: None,
+            merge_conflicts: Vec::new(),
+            restores: None,
             created_at: now_ms(),
         }
     }
@@ -169,6 +214,25 @@ impl Store {
                 conn,
                 "SELECT body FROM operations WHERE state = 'applying' ORDER BY id",
                 [],
+            )
+        })?;
+        bodies
+            .iter()
+            .map(|body| Ok(serde_json::from_str(body)?))
+            .collect()
+    }
+
+    /// Applied operations from `since` through the newest, oldest first, for
+    /// `restore_since` to fold into one span.
+    ///
+    /// # Errors
+    /// Returns an error when the records cannot be read.
+    pub fn operations_since(&self, since: &str) -> Result<Vec<Operation>, StoreError> {
+        let bodies = self.with(|conn| {
+            crate::bodies(
+                conn,
+                "SELECT body FROM operations WHERE id >= ?1 AND state = 'applied' ORDER BY id ASC",
+                params![since],
             )
         })?;
         bodies

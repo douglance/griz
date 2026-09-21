@@ -6,7 +6,7 @@ use crate::{
     lines::{Address, address, merge_lines},
 };
 use griz_core::{ChangeKind, FileChange, render_diff};
-use griz_store::{Operation, Store};
+use griz_store::{Operation, Store, parse_blob_id};
 use incurs::command::{CommandDef, TypedContext, TypedResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -144,12 +144,16 @@ pub fn get_command() -> CommandDef {
             result.map_or_else(CmdError::result, TypedResult::ok)
         },
     )
-    .description("The complete record of a plan or operation, including problems and the nearest real text for any anchor that missed.")
+    .description("The complete record of a plan or operation, including problems and the nearest real text for any anchor that missed. A blob_ prefixed id, as a merge conflict's base, planned, or current fields carry, returns that text instead.")
     .mcp(annotations::read_only())
     .done()
 }
 
 fn get(store: &Store, id: &str) -> Result<Value, CmdError> {
+    if let Some(hash) = parse_blob_id(id) {
+        let text = store.get_blob(hash)?;
+        return Ok(json!({ "id": id, "text": text }));
+    }
     let value = if id.starts_with("op_") {
         serde_json::to_value(store.operation(id)?)
     } else {

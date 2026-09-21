@@ -2,6 +2,7 @@
 
 mod common;
 mod compose;
+mod conflicts;
 mod crash;
 mod flow;
 mod mcp;

@@ -6,6 +6,22 @@ use griz_core::content_hash;
 /// Largest file text the store keeps, in bytes.
 pub const MAX_BLOB: usize = 16 * 1024 * 1024;
 
+/// Prefix that addresses a blob by its content hash, distinct from an
+/// operation or plan identifier.
+pub const BLOB_PREFIX: &str = "blob_";
+
+/// The addressable identifier for the blob with fingerprint `hash`.
+#[must_use]
+pub fn blob_id(hash: &str) -> String {
+    format!("{BLOB_PREFIX}{hash}")
+}
+
+/// The fingerprint `id` addresses, when it is a blob identifier.
+#[must_use]
+pub fn parse_blob_id(id: &str) -> Option<&str> {
+    id.strip_prefix(BLOB_PREFIX)
+}
+
 impl Store {
     /// Stores `text` and returns its fingerprint.
     ///

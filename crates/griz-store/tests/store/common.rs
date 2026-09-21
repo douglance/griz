@@ -1,7 +1,7 @@
 //! Shared fixtures.
 
 use griz_core::{Anchor, DiskSource, Occurrence, Op, build_plan};
-use griz_store::{ApplyRequest, OnStale, PlanRecord, Store};
+use griz_store::{ApplyRequest, OnStale, PlanRecord, Store, UndoRequest};
 use std::{
     error::Error,
     path::{Path, PathBuf},
@@ -71,6 +71,15 @@ pub fn request(plan: &PlanRecord) -> ApplyRequest {
     }
 }
 
+/// A default undo request restoring every file, refusing on any stale one.
+pub fn undo_request(operation: &str) -> UndoRequest {
+    UndoRequest {
+        operation: operation.to_string(),
+        paths: Vec::new(),
+        on_stale: OnStale::Refuse,
+        purpose: "test".to_string(),
+    }
+}
 /// Whether `path` exists.
 pub fn exists(path: &Path) -> bool {
     path.exists()
