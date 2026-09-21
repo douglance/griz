@@ -45,6 +45,7 @@ impl Store {
         };
         op.state = OperationState::Applying;
         self.save_operation(op)?;
+        failpoint("after_journal");
         for (index, (target, temp)) in targets.iter().zip(staged).enumerate() {
             commit(&target.path, temp)?;
             failpoint_after(index);
@@ -81,7 +82,7 @@ fn failpoint_after(index: usize) {
 /// Stages every text write, removing what was staged if any fails.
 fn stage_all(targets: &[Target]) -> std::io::Result<Vec<Option<PathBuf>>> {
     let mut staged = Vec::with_capacity(targets.len());
-    for target in targets {
+    for (index, target) in targets.iter().enumerate() {
         let temp = target
             .text
             .as_deref()
@@ -94,8 +95,17 @@ fn stage_all(targets: &[Target]) -> std::io::Result<Vec<Option<PathBuf>>> {
                 return Err(error);
             }
         }
+        mid_stage_failpoint(index);
     }
     Ok(staged)
+}
+
+/// Stops mid-staging when the crash-recovery failpoint is armed, to test that
+/// nothing is journaled about writes that were never fully staged.
+fn mid_stage_failpoint(index: usize) {
+    if index == 0 {
+        failpoint("mid_stage");
+    }
 }
 
 fn discard(staged: &[Option<PathBuf>]) {
