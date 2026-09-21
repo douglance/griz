@@ -51,8 +51,33 @@ To keep the parts that passed, undo only the failing files with
 
 `griz.find({ root, pattern: "foo($A, $$$REST)" })` matches syntax, not text,
 in Rust, TypeScript, JavaScript, Python, Go, and Swift. Each match carries
-`vars` (`{ A, REST }`) and the same `range` and `file_hash` as a text match, so
-the edit that follows is unchanged.
+`vars` (`{ A, REST }`), their `var_ranges`, and the same `range` and
+`file_hash` as a text match, so the edit that follows is unchanged.
+
+A `replace` can be located by the same pattern and can edit one capture:
+`{ op: "replace", path, pattern: { pattern: "format!($FMT, $A)" }, target: "$FMT", replace: '"hi {}"' }`.
+A pattern match is exact on the parse tree, so it is `machine` confidence.
+
+`griz.find({ root, literal: "TODO", within: ["comment"] })` searches only
+inside comments; `string` and raw node kinds work too.
+
+## Edits from a language server
+
+Ask the language server, in the same program, for a rename or code action, then
+hand its `WorkspaceEdit` to griz so the write is guarded, atomic, and undoable:
+
+```js
+const edit = await lsp.rename({ uri, position, newName: "total" });
+const plan = await griz.plan({ root, workspace_edit: edit, purpose: "rename", idempotency_key: "rename" });
+```
+
+Positions count in UTF-16 unless `position_encoding` says otherwise.
+
+## Check before applying
+
+Read `summary.syntax` on a plan at `verbosity: "info"`: `introduced_errors`
+means an edit broke the parse. `diff` lists the named items each file adds,
+removes, or changes. griz reports these; the program decides.
 
 ## Formatters
 
@@ -78,4 +103,17 @@ and a second look at the rest.
 
 `apply` refuses stale files. `on_stale: "merge"` merges three ways and writes
 only when the merge is clean. `undo` never overwrites a file changed since the
-apply; it lists it under `conflicts`.
+apply; it lists it under `conflicts`, or merges around the change with
+`on_stale: "merge"`.
+
+A conflict at `verbosity: "debug"` carries `merge_conflicts` with `base`,
+`planned`, and `current` blob ids. Read them with `griz.get`, run any merger
+(for example `mergiraf merge` through apoc), and plan the result as a whole-file
+replace guarded by `current_fingerprint`.
+
+## Rewind an attempt
+
+`griz.undo({ since: firstOp, purpose, idempotency_key })` restores every
+operation from `firstOp` through the newest as one operation. It refuses when a
+file's history was changed outside griz in between; leave such files out with
+`paths`. Undo the restore to go forward again.

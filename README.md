@@ -52,7 +52,13 @@ the check output stay inside the program.
 - **Misses show the real text.** A missed anchor records the nearest real window
   of the file, readable with `get`.
 - **Undo never clobbers.** Undo restores only files still exactly as the
-  operation left them, and is itself an operation that can be undone.
+  operation left them, or, with `on_stale: "merge"`, merges cleanly around
+  later edits. An undo is itself an operation that can be undone.
+- **Restores follow history.** `undo --since` rewinds a span of operations
+  only where every file's writes hand off the same fingerprint; a change made
+  outside griz in between refuses the restore.
+- **Parse facts, not judgments.** A plan reports whether each file still
+  parses; griz never refuses on it.
 - **Formatters do not break undo.** Run a formatter after `apply`, then
   `absorb` the operation; undo restores the text from before the apply.
 - **Retries are safe.** Mutations take an `idempotency_key`; the same key and
@@ -64,14 +70,14 @@ the check output stay inside the program.
 | Command | Kind | Does |
 |---|---|---|
 | `read PATH` | read | Numbered lines and fingerprint; `--grep`, `--lines`. |
-| `find` | read | Literal, regex, or structural (`--pattern 'foo($A, $$$REST)'`) matches with byte ranges, captures, fingerprints; honors `.gitignore`; `--expect-matches`. |
-| `plan` | records | Operations (`--ops`) or Codex patch text (`--patch`, `@file`) into a plan id. |
+| `find` | read | Literal, regex, or structural (`--pattern 'foo($A, $$$REST)'`) matches with byte ranges, captures, fingerprints; `--within comment`; honors `.gitignore`; `--expect-matches`. |
+| `plan` | records | Operations (`--ops`), Codex patch text (`--patch`, `@file`), or an LSP `--workspace-edit` into a plan id, with parse facts. |
 | `select PLAN` | records | A new plan from part of another, by path, edit id, or confidence. |
-| `diff ID` | read | Unified diff of a plan or operation, addressable by `--grep` or `--lines`. |
+| `diff ID` | read | Unified diff of a plan or operation, with the named items it changes; `--grep` or `--lines`. |
 | `apply PLAN` | writes | All-or-nothing write; `--min-confidence`, `--on-stale merge`, `--expect-files`. |
-| `undo OP` | writes | Restore an operation's files; `--paths` for a subset. |
+| `undo OP` | writes | Restore an operation's files; `--paths`, `--on-stale merge`, or `--since OP` for a span. |
 | `absorb OP` | records | Fold a later formatter run into an operation so undo still works. |
-| `log` / `get ID` | read | Operation history; the complete record of a plan or operation. |
+| `log` / `get ID` | read | Operation history; the complete record of a plan, operation, or `blob_<hash>`. |
 
 Mutations answer `{id, outcome}` with `outcome` one of `passed`, `failed`
 (a declared expectation did not hold), or `error` (nothing was done). Add
@@ -81,7 +87,7 @@ A verdict other than `passed` exits nonzero.
 Operations, applied in order:
 
 ```text
-{op:"replace", path, find:"text" | {text, after?, whole_lines?} | range:{start,end}, replace, occurrence?, expect_hash?}
+{op:"replace", path, find:"text" | {text, after?, whole_lines?} | range:{start,end} | pattern:{pattern, language?}, target?, replace, occurrence?, expect_hash?}
 {op:"insert",  path, anchor:{text}, after?, text, expect_hash?}
 {op:"create",  path, text}
 {op:"delete",  path, expect_hash?}
