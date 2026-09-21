@@ -2,6 +2,7 @@
 
 use crate::{
     annotations,
+    cmd_plan::resolve_all,
     context::{CmdError, root, with_store},
     lines::{Address, address, merge_lines},
 };
@@ -10,7 +11,7 @@ use griz_store::{Operation, Store, parse_blob_id};
 use incurs::command::{CommandDef, TypedContext, TypedResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Deserialize, incurs::Args)]
 struct IdArgs {
@@ -104,6 +105,11 @@ struct LogOptions {
     limit: usize,
     /// Return operations older than this operation id, for paging.
     before: Option<String>,
+    /// Only operations that wrote a file at or under these paths. One store
+    /// holds every repository's history; this narrows it to one tree.
+    paths: Option<Vec<String>>,
+    /// Directory relative paths resolve from. Defaults to the current directory.
+    root: Option<String>,
 }
 
 /// The `log` command.
@@ -111,21 +117,34 @@ pub fn log_command() -> CommandDef {
     CommandDef::typed::<(), LogOptions, (), Value, _, _>(
         "log",
         |ctx: TypedContext<(), LogOptions, ()>| async move {
-            let LogOptions { limit, before } = ctx.options;
-            let result = with_store(move |store| log(store, limit, before.as_deref())).await;
+            let LogOptions {
+                limit,
+                before,
+                paths,
+                root: root_option,
+            } = ctx.options;
+            let under = match root(root_option.as_deref()) {
+                Ok(root) => resolve_all(&root, paths),
+                Err(error) => return CmdError::result(error),
+            };
+            let result =
+                with_store(move |store| log(store, limit, before.as_deref(), &under)).await;
             result.map_or_else(CmdError::result, TypedResult::ok)
         },
     )
-    .description("Operations newest first: every apply and undo with its state and file count.")
+    .description("Operations newest first: every apply and undo with its state and file count. Narrow to one tree with paths.")
     .mcp(annotations::read_only())
     .done()
 }
 
-fn log(store: &Store, limit: usize, before: Option<&str>) -> Result<Value, CmdError> {
-    let ops = store.operations(limit, before)?;
-    let next = (ops.len() == limit)
-        .then(|| ops.last().map(|op| op.id.clone()))
-        .flatten();
+fn log(
+    store: &Store,
+    limit: usize,
+    before: Option<&str>,
+    under: &[PathBuf],
+) -> Result<Value, CmdError> {
+    let page = store.operations_under(limit, before, under)?;
+    let (ops, next) = (page.operations, page.next);
     Ok(json!({
         "operations": ops.iter().map(|op| json!({
             "id": op.id, "kind": op.kind, "state": op.state, "plan": op.plan,

@@ -11,6 +11,7 @@ mod db;
 mod error;
 mod execute;
 mod journal;
+mod listing;
 mod locks;
 mod merge;
 mod plans;
@@ -26,6 +27,7 @@ pub use error::StoreError;
 pub use journal::{
     ConflictRegion, FileWrite, MergeConflict, Operation, OperationKind, OperationState, Restores,
 };
+pub use listing::Page;
 pub use plans::{PlanRecord, Selection};
 pub use receipts::Claim;
 

@@ -7,6 +7,7 @@ mod conflicts;
 mod crash;
 mod definitions;
 mod flow;
+mod log_scope;
 mod mcp;
 mod replay;
 mod scope;
