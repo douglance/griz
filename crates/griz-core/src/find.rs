@@ -4,13 +4,19 @@
 //! an ast-grep pattern such as `foo($A, $$$REST)`. Every query answers with the
 //! same match shape, so an edit built from one kind works for the other.
 
-use crate::{ByteRange, content_hash, matcher::line_of, structural::Shape};
+use crate::{
+    ByteRange, content_hash,
+    matcher::line_of,
+    scope,
+    structural::{self, Shape},
+};
+use ast_grep_language::SupportLang;
 use ignore::{WalkBuilder, overrides::OverrideBuilder};
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     ops::Range,
     path::{Path, PathBuf},
 };
@@ -38,6 +44,11 @@ pub struct FindQuery {
     pub offset: usize,
     /// Most matches to return.
     pub limit: usize,
+    /// Only match inside syntax nodes of these kinds, such as `comment` or
+    /// `string`, in enabled languages. Files in another language are
+    /// skipped once this is set.
+    #[serde(default)]
+    pub within: Vec<String>,
 }
 
 /// One match, carrying everything needed to edit exactly this text later.
@@ -137,17 +148,61 @@ fn text(source: &str) -> Result<Matcher, String> {
 /// Returns a message for a bad pattern, a bad glob, or no pattern at all.
 pub fn find(query: &FindQuery) -> Result<FindPage, String> {
     let matcher = Matcher::new(query)?;
+    let paths = files(query)?;
+    validate_within(query, &paths)?;
     let mut page = FindPage::default();
-    for path in files(query)? {
+    for path in paths {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let hits = matcher.hits(&path, &text)?;
+        let Some(hits) = find_in_file(&matcher, query, &path, &text)? else {
+            continue;
+        };
         collect_file(&mut page, query, hits, (&path, &text));
     }
     let shown = query.offset + page.matches.len();
     page.next = (shown < page.total).then_some(shown);
     Ok(page)
+}
+
+/// Every hit in `text`, scoped to `query.within` when it is set; `None`
+/// skips a file whose language cannot be checked against it.
+fn find_in_file(
+    matcher: &Matcher,
+    query: &FindQuery,
+    path: &Path,
+    text: &str,
+) -> Result<Option<Vec<Hit>>, String> {
+    if query.within.is_empty() {
+        return Ok(Some(matcher.hits(path, text)?));
+    }
+    let Some(language) = structural::enabled_language(path) else {
+        return Ok(None);
+    };
+    let spans = scope::spans(language, text, &query.within);
+    let hits = matcher.hits(path, text)?;
+    Ok(Some(
+        hits.into_iter()
+            .filter(|hit| spans.iter().any(|span| encloses(span, &hit.range)))
+            .collect(),
+    ))
+}
+
+fn encloses(span: &Range<usize>, range: &Range<usize>) -> bool {
+    span.start <= range.start && range.end <= span.end
+}
+
+/// Checks `within` before searching, once against every enabled language
+/// among the matched files.
+fn validate_within(query: &FindQuery, paths: &[PathBuf]) -> Result<(), String> {
+    if query.within.is_empty() {
+        return Ok(());
+    }
+    let languages: HashSet<SupportLang> = paths
+        .iter()
+        .filter_map(|path| structural::enabled_language(path))
+        .collect();
+    scope::validate(&query.within, &languages)
 }
 
 fn collect_file(

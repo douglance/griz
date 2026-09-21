@@ -18,6 +18,7 @@ mod overlay;
 mod patch;
 mod plan;
 mod reindent;
+mod scope;
 mod source;
 mod splice;
 mod structural;

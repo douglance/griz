@@ -6,6 +6,7 @@ mod crash;
 mod flow;
 mod mcp;
 mod replay;
+mod scope;
 mod syntax;
 mod verbosity;
 mod verdicts;

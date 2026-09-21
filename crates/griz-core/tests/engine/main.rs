@@ -6,5 +6,6 @@ mod find;
 mod ladder;
 mod patch;
 mod plan;
+mod scope;
 mod structural;
 mod syntax;
