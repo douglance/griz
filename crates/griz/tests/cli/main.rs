@@ -6,6 +6,7 @@ mod compose;
 mod conflicts;
 mod crash;
 mod definitions;
+mod diff_text;
 mod flow;
 mod log_scope;
 mod mcp;

@@ -28,6 +28,10 @@ struct DiffOptions {
     context: usize,
     /// Return only this inclusive line range of the diff, such as 1-80.
     lines: Option<String>,
+    /// Return the selected diff as one string under `text`, for a person
+    /// reading it, instead of only the numbered lines a program addresses.
+    #[incurs(default = false)]
+    text: bool,
     /// Directory file names are shown relative to. Defaults to the current directory.
     root: Option<String>,
 }
@@ -43,11 +47,13 @@ pub fn diff_command() -> CommandDef {
                 lines: ctx.options.lines,
             };
             let id = ctx.args.id;
+            let as_text = ctx.options.text;
             let base = match root(ctx.options.root.as_deref()) {
                 Ok(base) => base,
                 Err(error) => return error.result(),
             };
-            let result = with_store(move |store| diff(store, &id, &address, &base)).await;
+            let result =
+                with_store(move |store| diff(store, &id, &address, &base, as_text)).await;
             result.map_or_else(CmdError::result, TypedResult::ok)
         },
     )
@@ -56,7 +62,13 @@ pub fn diff_command() -> CommandDef {
     .done()
 }
 
-fn diff(store: &Store, id: &str, how: &Address, base: &Path) -> Result<Value, CmdError> {
+fn diff(
+    store: &Store,
+    id: &str,
+    how: &Address,
+    base: &Path,
+    as_text: bool,
+) -> Result<Value, CmdError> {
     let changes = if id.starts_with("op_") {
         operation_changes(store, &store.operation(id)?)?
     } else {
@@ -72,7 +84,28 @@ fn diff(store: &Store, id: &str, how: &Address, base: &Path) -> Result<Value, Cm
         })).collect::<Vec<_>>(),
     });
     merge_lines(&mut body, selected);
+    if as_text {
+        as_one_string(&mut body);
+    }
     Ok(body)
+}
+
+/// Replaces the numbered `lines` with one `text` string of the same lines.
+fn as_one_string(body: &mut Value) {
+    let Some(map) = body.as_object_mut() else {
+        return;
+    };
+    let joined = map.get("lines").and_then(Value::as_array).map(|lines| {
+        lines
+            .iter()
+            .filter_map(|line| line.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n")
+    });
+    if let Some(joined) = joined {
+        map.remove("lines");
+        map.insert("text".into(), Value::String(joined));
+    }
 }
 
 fn operation_changes(store: &Store, op: &Operation) -> Result<Vec<FileChange>, CmdError> {
