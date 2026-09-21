@@ -5,5 +5,6 @@ mod compose;
 mod crash;
 mod flow;
 mod mcp;
+mod replay;
 mod verbosity;
 mod verdicts;
