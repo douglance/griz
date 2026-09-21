@@ -102,9 +102,18 @@ struct OperationArgs {
     operation: String,
 }
 
+#[derive(Deserialize, incurs::Args)]
+struct UndoArgs {
+    /// Operation identifier, from apply or an earlier undo. Omit when giving `since`.
+    operation: Option<String>,
+}
+
 #[derive(Deserialize, incurs::Options)]
 struct UndoOptions {
-    /// Restore only these files. Defaults to every file the operation wrote.
+    /// Restore every applied operation from this one through the newest, as
+    /// one operation. Mutually exclusive with the operation argument.
+    since: Option<String>,
+    /// Restore only these files. Defaults to every file the operation (or span) wrote.
     paths: Option<Vec<String>>,
     /// When a file changed since it was written: refuse (default) or merge.
     on_stale: Option<String>,
@@ -120,39 +129,55 @@ struct UndoOptions {
 
 /// The `undo` command.
 pub fn undo_command() -> CommandDef {
-    CommandDef::typed::<OperationArgs, UndoOptions, (), Value, _, _>(
+    CommandDef::typed::<UndoArgs, UndoOptions, (), Value, _, _>(
         "undo",
-        |ctx: TypedContext<OperationArgs, UndoOptions, ()>| async move {
+        |ctx: TypedContext<UndoArgs, UndoOptions, ()>| async move {
             respond(undo(ctx.args.operation, ctx.options).await)
         },
     )
-    .description("Restore what an operation replaced, for files still exactly as it left them, or merged onto a newer text with on_stale merge. An undo is itself an operation and can be undone.")
+    .description("Restore what an operation replaced, for files still exactly as it left them, or merged onto a newer text with on_stale merge. Give since instead of the operation argument to restore every applied operation from that one through the newest as one operation. An undo is itself an operation and can be undone.")
     .mcp(annotations::writes_files())
     .done()
 }
 
-async fn undo(operation: String, options: UndoOptions) -> Result<(Value, Outcome), CmdError> {
+async fn undo(
+    operation: Option<String>,
+    options: UndoOptions,
+) -> Result<(Value, Outcome), CmdError> {
     let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
     let root = root(options.root.as_deref())?;
     let paths = resolve_all(&root, options.paths);
     let on_stale = parse_on_stale(options.on_stale.as_deref())?;
+    let since = options.since;
+    if operation.is_some() == since.is_some() {
+        return Err(CmdError::invalid(
+            "give exactly one of the operation argument or `since`",
+        ));
+    }
     let mutation = Mutation {
         command: "undo",
         key: options.idempotency_key,
-        input: json!({ "operation": operation, "paths": paths, "on_stale": on_stale }),
+        input: json!({ "operation": operation, "since": since, "paths": paths, "on_stale": on_stale }),
     };
-    let request = UndoRequest {
-        operation,
-        paths,
-        on_stale,
-        purpose: options.purpose,
-    };
+    let purpose = options.purpose;
     with_store(move |store| {
         run_mutation(
             store,
             &mutation,
             level,
-            |store| Ok(render::operation(&store.undo(&request)?, None)),
+            |store| {
+                let op = match (operation.as_deref(), since.as_deref()) {
+                    (_, Some(since)) => store.restore_since(since, &paths, on_stale, &purpose)?,
+                    (Some(operation), None) => store.undo(&UndoRequest {
+                        operation: operation.to_string(),
+                        paths: paths.clone(),
+                        on_stale,
+                        purpose: purpose.clone(),
+                    })?,
+                    (None, None) => unreachable!("validated above"),
+                };
+                Ok(render::operation(&op, None))
+            },
             |store, id, outcome| {
                 Ok(render::operation(&store.operation(id)?, None).with_outcome(outcome))
             },

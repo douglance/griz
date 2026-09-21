@@ -58,3 +58,44 @@ fn a_repeated_undo_key_replays_instead_of_restoring_twice() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn a_repeated_undo_since_key_replays_instead_of_restoring_twice() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write("a.rs", "one\n")?;
+    let first_ops = r#"[{"op":"replace","path":"a.rs","find":{"text":"one"},"replace":"ONE"}]"#;
+    let plan1 = griz.id(&["plan", "--ops", first_ops], "plan1")?;
+    let op1 = griz.id(&["apply", &plan1], "apply1")?;
+    let second_ops = r#"[{"op":"replace","path":"a.rs","find":{"text":"ONE"},"replace":"ONE2"}]"#;
+    let plan2 = griz.id(&["plan", "--ops", second_ops], "plan2")?;
+    griz.id(&["apply", &plan2], "apply2")?;
+    let first = griz.run(&[
+        "undo",
+        "--since",
+        &op1,
+        "--purpose",
+        "t",
+        "--idempotency-key",
+        "same",
+    ])?;
+    assert_eq!(first.json["outcome"], "passed", "{}", first.json);
+    assert_eq!(griz.read("a.rs")?, "one\n");
+    std::fs::write(griz.path("a.rs"), "tampered\n")?;
+    let again = griz.run(&[
+        "undo",
+        "--since",
+        &op1,
+        "--purpose",
+        "t",
+        "--idempotency-key",
+        "same",
+    ])?;
+    assert_eq!(again.json["id"], first.json["id"]);
+    assert_eq!(again.json["replayed"], true);
+    assert_eq!(
+        griz.read("a.rs")?,
+        "tampered\n",
+        "a replay must not touch the file again"
+    );
+    Ok(())
+}

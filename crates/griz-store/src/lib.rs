@@ -16,6 +16,7 @@ mod merge;
 mod plans;
 mod receipts;
 mod recovery;
+mod restore;
 mod write;
 
 pub use absorb::Absorbed;

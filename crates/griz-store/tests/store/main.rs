@@ -4,4 +4,5 @@ mod apply;
 mod common;
 mod receipts;
 mod recovery;
+mod restore;
 mod undo;
