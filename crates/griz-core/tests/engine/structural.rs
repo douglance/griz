@@ -85,7 +85,7 @@ fn text_is_not_parsed_as_code_and_bad_input_is_refused() -> TestResult {
 }
 
 #[test]
-fn a_named_language_overrides_the_file_extension() -> TestResult {
+fn a_named_language_searches_only_that_languages_extensions() -> TestResult {
     let dir = tree()?;
     fs::write(
         dir.path().join("rusty.ts"),
@@ -93,13 +93,57 @@ fn a_named_language_overrides_the_file_extension() -> TestResult {
     )?;
     let page = find(&FindQuery {
         language: Some("rust".to_string()),
-        globs: vec!["rusty.ts".to_string()],
         ..query(dir.path(), "fn $NAME() { $$$BODY }")
     })?;
     assert_eq!(page.total, 1, "{page:?}");
-    assert_eq!(
-        page.matches[0].vars.get("NAME").map(String::as_str),
-        Some("main")
+    assert!(page.matches[0].path.ends_with("a.rs"), "{page:?}");
+    let named = find(&FindQuery {
+        language: Some("typescript".to_string()),
+        ..query(dir.path(), "foo($A, $B)")
+    })?;
+    assert_eq!(named.total, 1, "{named:?}");
+    assert!(named.matches[0].path.ends_with("b.ts"));
+    Ok(())
+}
+
+#[test]
+fn a_disabled_language_extension_is_skipped_not_parsed() -> TestResult {
+    let dir = tree()?;
+    fs::write(dir.path().join("notes.md"), "# foo(1, 2)\n")?;
+    fs::write(dir.path().join("data.json"), "{\"call\": \"foo(1, 2)\"}\n")?;
+    fs::write(dir.path().join("config.yaml"), "call: foo(1, 2)\n")?;
+    let page = find(&query(dir.path(), "foo($A, $B)"))?;
+    let extensions: Vec<_> = page
+        .matches
+        .iter()
+        .filter_map(|m| m.path.extension().and_then(|e| e.to_str()))
+        .collect();
+    assert!(
+        extensions.iter().all(|ext| matches!(*ext, "rs" | "ts")),
+        "{extensions:?}"
     );
+    Ok(())
+}
+
+#[test]
+fn an_unsupported_named_language_is_an_error_not_a_panic() -> TestResult {
+    let dir = tree()?;
+    let error = find(&FindQuery {
+        language: Some("java".to_string()),
+        ..query(dir.path(), "foo($A, $B)")
+    })
+    .err()
+    .ok_or("expected an error for a language with no linked parser")?;
+    assert!(error.contains("java"), "{error}");
+    Ok(())
+}
+
+#[test]
+fn an_invalid_pattern_is_an_error_naming_it_not_zero_matches() -> TestResult {
+    let dir = tree()?;
+    let error = find(&query(dir.path(), "((("))
+        .err()
+        .ok_or("expected an error for an unparseable pattern")?;
+    assert!(error.contains("((("), "{error}");
     Ok(())
 }

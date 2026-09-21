@@ -103,9 +103,9 @@ impl Matcher {
         }
     }
 
-    fn hits(&self, path: &Path, text: &str) -> Vec<Hit> {
+    fn hits(&self, path: &Path, text: &str) -> Result<Vec<Hit>, String> {
         match self {
-            Self::Text(regex) => regex
+            Self::Text(regex) => Ok(regex
                 .captures_iter(text)
                 .map(|captures| Hit {
                     range: captures.get(0).map_or(0..0, |m| m.range()),
@@ -116,7 +116,7 @@ impl Matcher {
                         .collect(),
                     vars: BTreeMap::new(),
                 })
-                .collect(),
+                .collect()),
             Self::Shape(shape) => shape.hits(path, text),
         }
     }
@@ -142,7 +142,7 @@ pub fn find(query: &FindQuery) -> Result<FindPage, String> {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let hits = matcher.hits(&path, &text);
+        let hits = matcher.hits(&path, &text)?;
         collect_file(&mut page, query, hits, (&path, &text));
     }
     let shown = query.offset + page.matches.len();
