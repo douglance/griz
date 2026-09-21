@@ -15,7 +15,11 @@ const FORBIDDEN_CORE_REFS: &[&str] = &[
     "fs::rename",
     "fs::remove",
     "fs::create_dir",
+    "fs::copy",
+    "fs::hard_link",
+    "fs::set_permissions",
     "file::create",
+    "file::options",
     "openoptions",
     "std::process",
     "command::new",
@@ -173,5 +177,38 @@ mod tests {
     fn code_lines_ignore_blank_and_comment_only_lines() {
         let source = "fn f() {\n\n// comment\nlet x = 1;\n/* hidden */\nx\n}\n";
         assert_eq!(code_line_count(source, 1, 7), 4);
+    }
+
+    fn core_package(root: &Path) -> Package {
+        Package {
+            name: "griz-core".to_string(),
+            manifest_path: root.join("Cargo.toml"),
+            root: root.to_path_buf(),
+        }
+    }
+
+    fn violations_for(source: &str) -> anyhow::Result<Vec<Violation>> {
+        let workspace = tempfile::tempdir()?;
+        let core_root = workspace.path().join("crates/griz-core");
+        fs::create_dir_all(core_root.join("src"))?;
+        let file = core_root.join("src/lib.rs");
+        fs::write(&file, source)?;
+        check_core_purity(workspace.path(), &[core_package(&core_root)], &[file])
+    }
+
+    #[test]
+    fn a_write_via_fs_copy_in_a_core_fixture_file_is_a_violation() -> anyhow::Result<()> {
+        let violations =
+            violations_for("fn f() {\n    std::fs::copy(\"a\", \"b\").unwrap();\n}\n")?;
+        assert_eq!(violations.len(), 1, "{violations:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_write_via_file_options_in_a_core_fixture_file_is_a_violation() -> anyhow::Result<()> {
+        let violations =
+            violations_for("fn f() {\n    std::fs::File::options().write(true);\n}\n")?;
+        assert_eq!(violations.len(), 1, "{violations:?}");
+        Ok(())
     }
 }
