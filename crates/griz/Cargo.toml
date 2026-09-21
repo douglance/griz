@@ -1,0 +1,28 @@
+[package]
+name = "griz"
+description = "Code edits as composable primitives: find, plan, diff, apply, undo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords = ["codemod", "refactoring", "mcp", "agents", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+griz-core.workspace = true
+griz-store.workspace = true
+incurs.workspace = true
+regex.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
