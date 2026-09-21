@@ -54,8 +54,10 @@ impl Fixture {
                 whole_lines: false,
             }),
             range: None,
+            pattern: None,
             replace: with.to_string(),
             occurrence: Occurrence::Unique,
+            target: None,
             expect_hash: None,
         }
     }

@@ -128,3 +128,23 @@ fn select_applies_only_the_chosen_files() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn a_structural_pattern_replaces_only_the_matched_capture() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write("a.rs", "fn f() {\n    foo(old_name, 2);\n}\n")?;
+    let ops = serde_json::to_string(&json!([{
+        "op": "replace",
+        "path": "a.rs",
+        "pattern": { "pattern": "foo($A, $B)" },
+        "target": "$A",
+        "replace": "new_name",
+    }]))?;
+    let plan = griz.id(
+        &["plan", "--ops", &ops, "--expect-edits", "1"],
+        "pattern-plan",
+    )?;
+    griz.id(&["apply", &plan], "pattern-apply")?;
+    assert_eq!(griz.read("a.rs")?, "fn f() {\n    foo(new_name, 2);\n}\n");
+    Ok(())
+}

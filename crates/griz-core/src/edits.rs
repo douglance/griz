@@ -20,7 +20,7 @@ pub struct ReplaceSpec<'a> {
     pub occurrence: Occurrence,
 }
 
-fn text_of(slot: &Slot) -> Result<&str, ProblemKind> {
+pub(crate) fn text_of(slot: &Slot) -> Result<&str, ProblemKind> {
     slot.current.as_deref().ok_or(ProblemKind::NotFound)
 }
 
@@ -193,7 +193,7 @@ fn replacement(replace: &str, found: &Found) -> String {
     }
 }
 
-fn edit(id: String, index: usize, path: &Path, line: usize, rung: Rung) -> Edit {
+pub(crate) fn edit(id: String, index: usize, path: &Path, line: usize, rung: Rung) -> Edit {
     Edit {
         id,
         op: index,

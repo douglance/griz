@@ -2,6 +2,7 @@
 
 use crate::{
     Edit, Op, Plan, Problem, ProblemKind, Rung, Source, content_hash, edits, overlay::Overlay,
+    pattern_edit,
 };
 use std::path::Path;
 
@@ -68,21 +69,40 @@ fn plan_replace(overlay: &mut Overlay<'_>, index: usize, op: &Op) -> OpResult {
         path,
         find,
         range,
+        pattern,
         replace,
         occurrence,
+        target,
         expect_hash,
     } = op
     else {
         return Err(invalid("not a replace operation".to_string()));
     };
     guard(overlay, path, expect_hash.as_deref())?;
+    if target.is_some() && pattern.is_none() {
+        return Err(invalid("`target` requires `pattern`".to_string()));
+    }
     let slot = overlay.slot(path).map_err(invalid)?;
+    if let Some(locator) = pattern {
+        if range.is_some() || find.is_some() {
+            return Err(invalid(
+                "give exactly one of `range`, `find`, or `pattern`".to_string(),
+            ));
+        }
+        let spec = pattern_edit::PatternSpec {
+            locator,
+            replace,
+            occurrence: *occurrence,
+            target: target.as_deref(),
+        };
+        return pattern_edit::replace_pattern(slot, index, path, &spec);
+    }
     if let Some(range) = range {
         return edits::replace_range(slot, index, path, *range, (find.as_ref(), replace));
     }
     let anchor = find
         .as_ref()
-        .ok_or_else(|| invalid("replace needs `find` or `range`".to_string()))?;
+        .ok_or_else(|| invalid("replace needs `find`, `range`, or `pattern`".to_string()))?;
     let spec = edits::ReplaceSpec {
         anchor,
         replace,

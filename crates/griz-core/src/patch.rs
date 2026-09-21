@@ -227,8 +227,10 @@ fn hunk_op(path: &Path, hunk: Hunk) -> Op {
             whole_lines: true,
         }),
         range: None,
+        pattern: None,
         replace: hunk.new.join("\n"),
         occurrence: Occurrence::Unique,
+        target: None,
         expect_hash: None,
     }
 }

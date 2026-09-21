@@ -16,6 +16,8 @@ mod merge;
 mod model;
 mod overlay;
 mod patch;
+mod pattern_edit;
+mod pattern_locator;
 mod plan;
 mod reindent;
 mod source;
@@ -31,5 +33,6 @@ pub use model::{
     ProblemKind, Rung, Window,
 };
 pub use patch::{PatchError, parse_patch};
+pub use pattern_locator::PatternLocator;
 pub use plan::build_plan;
 pub use source::{DiskSource, MapSource, Source};

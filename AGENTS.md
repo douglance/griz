@@ -13,6 +13,7 @@
 - Every returned match and every planned file carries the fingerprint of the text it was computed against. `apply` writes nothing unless every file still has it, except through a clean three-way merge the caller opted into.
 - Stage every file before journaling an operation as `applying`, and journal before the first rename. Recovery on open must be total: roll files at their old fingerprint forward, leave files at neither fingerprint alone and list them.
 - A tolerant match is never `machine` confidence. Keep the ladder order exact, trailing whitespace, indentation, trimmed: every indentation match is also a trimmed match, so the stricter rung must run first.
+- A structural pattern match is exact identity on the parse tree, machine confidence, never a tolerant rung.
 - An ambiguous anchor is an error listing every candidate. Never take the first match.
 - Undo restores only files still at the operation's written fingerprint. An undo is an operation and can be undone.
 - Mutations take `purpose` and `idempotency_key`, scoped per command. Same key and input replays; different input is `IDEMPOTENCY_CONFLICT`. Release a key only when the command failed validation before changing anything.

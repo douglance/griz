@@ -4,6 +4,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::pattern_locator::PatternLocator;
+
 /// A half-open byte range `[start, end)` in a file's text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ByteRange {
@@ -45,21 +47,28 @@ pub struct Anchor {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
-    /// Replace anchored text, or an exact byte range from a find result.
+    /// Replace anchored text, an exact byte range, or a structural pattern
+    /// match. Give exactly one of `find`, `range`, or `pattern`.
     Replace {
         /// File to change.
         path: PathBuf,
-        /// Text to locate. Required unless `range` is given.
+        /// Text to locate. Required unless `range` or `pattern` is given.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         find: Option<Anchor>,
         /// Exact byte range in the file as it was when found.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         range: Option<ByteRange>,
+        /// Structural pattern match, as an alternative to `find`/`range`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pattern: Option<PatternLocator>,
         /// Replacement text.
         replace: String,
         /// Which matches to replace.
         #[serde(default)]
         occurrence: Occurrence,
+        /// With `pattern`, edit only this metavariable's range, e.g. `$NAME`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
         /// Fingerprint the file must still have.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expect_hash: Option<String>,
@@ -150,6 +159,8 @@ pub enum Rung {
     Indentation,
     /// Whole-file operation such as create, delete, or move.
     File,
+    /// A structural pattern match: exact identity on the parse tree, never tolerant.
+    Pattern,
 }
 
 impl Rung {
@@ -157,7 +168,7 @@ impl Rung {
     #[must_use]
     pub fn confidence(self) -> Confidence {
         match self {
-            Self::Range | Self::Exact | Self::File => Confidence::Machine,
+            Self::Range | Self::Exact | Self::File | Self::Pattern => Confidence::Machine,
             Self::TrailingWhitespace | Self::Trimmed | Self::Indentation => Confidence::Maybe,
         }
     }

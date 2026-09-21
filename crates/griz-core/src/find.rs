@@ -58,6 +58,9 @@ pub struct Match {
     /// Text captured by each structural metavariable, by name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub vars: BTreeMap<String, String>,
+    /// Byte range captured by each structural metavariable, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub var_ranges: BTreeMap<String, ByteRange>,
     /// Fingerprint of the whole file when searched.
     pub file_hash: String,
 }
@@ -84,6 +87,8 @@ pub struct Hit {
     pub captures: Vec<Option<String>>,
     /// Structural metavariables.
     pub vars: BTreeMap<String, String>,
+    /// Byte range of each structural metavariable, by name.
+    pub var_ranges: BTreeMap<String, Range<usize>>,
 }
 
 enum Matcher {
@@ -115,6 +120,7 @@ impl Matcher {
                         .map(|group| group.map(|m| m.as_str().to_string()))
                         .collect(),
                     vars: BTreeMap::new(),
+                    var_ranges: BTreeMap::new(),
                 })
                 .collect()),
             Self::Shape(shape) => shape.hits(path, text),
@@ -214,6 +220,19 @@ fn to_match(path: &Path, text: &str, hit: Hit, hash: &str) -> Match {
         text: text[whole].to_string(),
         captures: hit.captures,
         vars: hit.vars,
+        var_ranges: hit
+            .var_ranges
+            .into_iter()
+            .map(|(name, range)| {
+                (
+                    name,
+                    ByteRange {
+                        start: range.start,
+                        end: range.end,
+                    },
+                )
+            })
+            .collect(),
         file_hash: hash.to_string(),
     }
 }

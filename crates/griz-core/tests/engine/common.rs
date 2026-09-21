@@ -40,8 +40,10 @@ pub fn replace(path: &str, find: &str, with: &str) -> Op {
         path: PathBuf::from(path),
         find: Some(anchor(find)),
         range: None,
+        pattern: None,
         replace: with.to_string(),
         occurrence: Occurrence::Unique,
+        target: None,
         expect_hash: None,
     }
 }
