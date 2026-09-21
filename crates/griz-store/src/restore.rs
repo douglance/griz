@@ -43,8 +43,20 @@ impl Store {
             let resolved = self.resolve_chain(path, chain, on_stale)?;
             record_resolved(&mut op, &mut targets, path.clone(), resolved);
         }
+        let broken: Vec<String> = chains
+            .iter()
+            .filter(|(_, chain)| !unbroken(chain))
+            .map(|(path, _)| path.display().to_string())
+            .collect();
+        if !broken.is_empty() {
+            let reason = format!(
+                "{} changed outside griz between operations in the span, which a merge cannot bridge; narrow with paths to leave them out",
+                broken.join(", ")
+            );
+            return self.refuse(op, &reason);
+        }
         if !op.conflicts.is_empty() {
-            return self.refuse(op, "the restore span changed some files, or their history is broken; narrow with paths or apply with on_stale merge");
+            return self.refuse(op, "files changed since the span's last write; narrow with paths or apply with on_stale merge");
         }
         if targets.is_empty() {
             return self.refuse(op, "no file needed restoring in this span");
