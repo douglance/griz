@@ -130,6 +130,47 @@ fn select_applies_only_the_chosen_files() -> TestResult {
 }
 
 #[test]
+fn a_workspace_edit_applies_a_text_edit_and_renames_a_file() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write("a.rs", "let oldName = 1;\n")?;
+    griz.write("old.rs", "x\n")?;
+    let root = griz.work.path().canonicalize()?;
+    let a_uri = format!("file://{}", root.join("a.rs").display());
+    let old_uri = format!("file://{}", root.join("old.rs").display());
+    let new_uri = format!("file://{}", root.join("new.rs").display());
+    let edit = json!({
+        "documentChanges": [
+            {
+                "textDocument": { "uri": a_uri },
+                "edits": [{
+                    "range": {
+                        "start": { "line": 0, "character": 4 },
+                        "end": { "line": 0, "character": 11 },
+                    },
+                    "newText": "newName",
+                }],
+            },
+            { "kind": "rename", "oldUri": old_uri, "newUri": new_uri },
+        ],
+    });
+    let plan = griz.id(
+        &[
+            "plan",
+            "--workspace-edit",
+            &edit.to_string(),
+            "--expect-edits",
+            "3",
+        ],
+        "workspace-edit-plan",
+    )?;
+    griz.id(&["apply", &plan], "workspace-edit-apply")?;
+    assert_eq!(griz.read("a.rs")?, "let newName = 1;\n");
+    assert!(!griz.path("old.rs").exists());
+    assert_eq!(griz.read("new.rs")?, "x\n");
+    Ok(())
+}
+
+#[test]
 fn a_structural_pattern_replaces_only_the_matched_capture() -> TestResult {
     let griz = Griz::new()?;
     griz.write("a.rs", "fn f() {\n    foo(old_name, 2);\n}\n")?;

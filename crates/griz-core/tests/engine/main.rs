@@ -8,3 +8,4 @@ mod patch;
 mod pattern;
 mod plan;
 mod structural;
+mod workspace_edit;

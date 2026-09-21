@@ -19,10 +19,13 @@ mod patch;
 mod pattern_edit;
 mod pattern_locator;
 mod plan;
+mod position;
 mod reindent;
 mod source;
 mod splice;
 mod structural;
+mod uri;
+mod workspace_edit;
 
 pub use diff::{FileDiff, render_diff};
 pub use find::{FindPage, FindQuery, Match, find};
@@ -35,4 +38,10 @@ pub use model::{
 pub use patch::{PatchError, parse_patch};
 pub use pattern_locator::PatternLocator;
 pub use plan::build_plan;
+pub use position::{Position, PositionEncoding};
 pub use source::{DiskSource, MapSource, Source};
+pub use workspace_edit::{
+    CreateFile, DeleteFile, DocumentChange, Range, RenameFile, TextDocumentEdit,
+    TextDocumentIdentifier, TextEdit, WorkspaceEdit, WorkspaceEditError,
+    to_ops as workspace_edit_to_ops,
+};

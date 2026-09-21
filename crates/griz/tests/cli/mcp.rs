@@ -220,6 +220,28 @@ fn plan_schema_publishes_pattern_fields() -> TestResult {
 }
 
 #[test]
+fn plan_schema_publishes_workspace_edit_fields() -> TestResult {
+    let mut mcp = Mcp::ready()?;
+    let schema = plan_input_schema(&mut mcp)?;
+
+    for name in ["workspace_edit", "position_encoding"] {
+        assert!(
+            schema["properties"][name].is_object(),
+            "missing {name} in {schema}"
+        );
+    }
+    assert!(
+        schema["properties"]["workspace_edit"]["properties"]["documentChanges"]["type"]
+            .as_array()
+            .is_some_and(|types| types.iter().any(|t| t == "array")),
+        "{schema}"
+    );
+
+    assert_every_ref_resolves(&schema);
+    Ok(())
+}
+
+#[test]
 fn plan_call_accepts_a_typed_op_object() -> TestResult {
     let mut mcp = Mcp::ready()?;
     let called = mcp.call(
