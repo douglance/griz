@@ -1,0 +1,27 @@
+[package]
+name = "griz-core"
+description = "Pure edit engine for griz: find, plan, match, diff, and merge without writing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["codemod", "refactoring", "patch", "edit", "agents"]
+categories = ["development-tools", "text-processing"]
+
+[dependencies]
+diffy.workspace = true
+ignore.workspace = true
+regex.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+similar.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
