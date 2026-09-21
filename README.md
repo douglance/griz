@@ -78,7 +78,7 @@ A verdict other than `passed` exits nonzero.
 Operations, applied in order:
 
 ```text
-{op:"replace", path, find:{text, after?, whole_lines?} | range:{start,end}, replace, occurrence?, expect_hash?}
+{op:"replace", path, find:"text" | {text, after?, whole_lines?} | range:{start,end}, replace, occurrence?, expect_hash?}
 {op:"insert",  path, anchor:{text}, after?, text, expect_hash?}
 {op:"create",  path, text}
 {op:"delete",  path, expect_hash?}

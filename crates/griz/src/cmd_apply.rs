@@ -6,7 +6,7 @@ use crate::{
     context::{CmdError, root, with_store},
     receipt::{Mutation, run_mutation},
     render, respond,
-    verdict::{Outcome, Rendered, Verbosity},
+    verdict::{Outcome, Verbosity},
 };
 use griz_core::Confidence;
 use griz_store::{ApplyRequest, OnStale};
@@ -83,19 +83,11 @@ async fn apply(plan: String, options: ApplyOptions) -> Result<(Value, Outcome), 
             level,
             |store| Ok(render::operation(&store.apply(&request)?, expect_files)),
             |store, id, outcome| {
-                Ok(replayed(
-                    render::operation(&store.operation(id)?, expect_files),
-                    outcome,
-                ))
+                Ok(render::operation(&store.operation(id)?, expect_files).with_outcome(outcome))
             },
         )
     })
     .await
-}
-
-fn replayed(mut rendered: Rendered, outcome: Outcome) -> Rendered {
-    rendered.outcome = outcome;
-    rendered
 }
 
 #[derive(Deserialize, incurs::Args)]
@@ -148,10 +140,7 @@ async fn undo(id: String, options: UndoOptions) -> Result<(Value, Outcome), CmdE
             level,
             |store| Ok(render::operation(&store.undo(&id, &paths, &purpose)?, None)),
             |store, id, outcome| {
-                Ok(replayed(
-                    render::operation(&store.operation(id)?, None),
-                    outcome,
-                ))
+                Ok(render::operation(&store.operation(id)?, None).with_outcome(outcome))
             },
         )
     })

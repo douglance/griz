@@ -79,6 +79,13 @@ pub struct Rendered {
 }
 
 impl Rendered {
+    /// The same response with a recorded outcome, as when replaying a receipt.
+    #[must_use]
+    pub fn with_outcome(mut self, outcome: Outcome) -> Self {
+        self.outcome = outcome;
+        self
+    }
+
     /// The response at `level`.
     #[must_use]
     pub fn at(&self, level: Verbosity, replayed: bool) -> Value {

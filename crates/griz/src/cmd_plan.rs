@@ -75,15 +75,10 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
                     expect,
                 ))
             },
-            |store, id, outcome| Ok(replayed(render::plan(&store.plan(id)?, expect), outcome)),
+            |store, id, outcome| Ok(render::plan(&store.plan(id)?, expect).with_outcome(outcome)),
         )
     })
     .await
-}
-
-fn replayed(mut rendered: crate::verdict::Rendered, outcome: Outcome) -> crate::verdict::Rendered {
-    rendered.outcome = outcome;
-    rendered
 }
 
 fn collect_ops(
@@ -197,10 +192,7 @@ async fn select(id: String, options: SelectOptions) -> Result<(Value, Outcome), 
                 ))
             },
             |store, id, outcome| {
-                Ok(replayed(
-                    render::plan(&store.plan(id)?, PlanExpect::default()),
-                    outcome,
-                ))
+                Ok(render::plan(&store.plan(id)?, PlanExpect::default()).with_outcome(outcome))
             },
         )
     })

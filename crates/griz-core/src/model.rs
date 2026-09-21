@@ -26,8 +26,10 @@ pub enum Occurrence {
     Nth(usize),
 }
 
-/// Text that locates an edit inside a file.
+/// Text that locates an edit inside a file. A plain string is accepted as
+/// shorthand for `{ text }`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(from = "crate::anchor_input::AnchorInput")]
 pub struct Anchor {
     /// Text to find.
     pub text: String,

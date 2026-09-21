@@ -177,3 +177,13 @@ fn an_empty_anchor_is_invalid() {
     let plan = build_plan(&[replace("a.rs", "", "x")], &source(&[("a.rs", "a\n")]));
     assert!(matches!(plan.problems[0].kind, ProblemKind::Invalid { .. }));
 }
+
+#[test]
+fn a_plain_string_is_shorthand_for_an_anchor() -> Result<(), serde_json::Error> {
+    let op: Op = serde_json::from_value(serde_json::json!({
+        "op": "replace", "path": "a.rs", "find": "one", "replace": "two"
+    }))?;
+    let plan = build_plan(&[op], &source(&[("a.rs", "one\n")]));
+    assert_eq!(after_of(&plan, "a.rs"), Some("two\n"));
+    Ok(())
+}

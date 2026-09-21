@@ -6,6 +6,7 @@
 //! [`Confidence`] it was matched at, and every [`Problem`] that stopped an
 //! operation. Writing a plan to disk belongs to `griz-store`.
 
+mod anchor_input;
 mod diff;
 mod edits;
 mod find;
