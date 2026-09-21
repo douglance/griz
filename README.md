@@ -91,7 +91,7 @@ Operations, applied in order:
 ## Use
 
 ```sh
-cargo install --path crates/griz
+cargo install griz
 griz --mcp            # MCP server: every command is a direct tool
 ```
 

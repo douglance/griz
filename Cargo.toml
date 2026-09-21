@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.97.1"
 license = "MIT"
 repository = "https://github.com/douglance/griz"
+homepage = "https://github.com/douglance/griz"
 
 [workspace.dependencies]
 anyhow = "1"
