@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 (2026-09-21)
+
+- Every JSON input reads from a file: `plan --ops @path` and `--workspace-edit @path`, as `--patch` already did. A missing file is an error naming it.
+- `log --paths` narrows history to operations that wrote under those paths, and paging continues past the ones it filtered out. One store holds every repository's operations.
+- `create` takes `overwrite`, so replacing a whole file needs no range and no byte count. An LSP `CreateFile`'s `overwrite` option is honored.
+- Patch text may hold several `*** Begin Patch` … `*** End Patch` documents in one call, and stray text after a document is an error instead of being dropped.
+
 ## 0.2.0 (2026-09-21)
 
 - `plan --workspace-edit`: plan an LSP `WorkspaceEdit` from a language server, rust-analyzer's structural replace, or any tool that emits one. Positions count in UTF-16 by default (`--position-encoding`), and each edit is a fingerprint-guarded byte range.

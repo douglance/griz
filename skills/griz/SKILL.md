@@ -90,7 +90,12 @@ before anything else can touch the same files.
 ## Patch text
 
 `griz.plan({ root, patch })` accepts Codex patch text (`*** Begin Patch` …).
-Several blocks for one file are fine.
+Several blocks for one file are fine, and several whole documents may follow
+one another in the same text. From the command line, `--patch @file`,
+`--ops @file`, and `--workspace-edit @file` read the input from a file.
+
+Replace a file's whole contents with
+`{ op: "create", path, text, overwrite: true }`; no range, no byte count.
 
 ## Tolerant matches
 

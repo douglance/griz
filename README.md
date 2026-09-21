@@ -77,7 +77,7 @@ the check output stay inside the program.
 | `apply PLAN` | writes | All-or-nothing write; `--min-confidence`, `--on-stale merge`, `--expect-files`. |
 | `undo OP` | writes | Restore an operation's files; `--paths`, `--on-stale merge`, or `--since OP` for a span. |
 | `absorb OP` | records | Fold a later formatter run into an operation so undo still works. |
-| `log` / `get ID` | read | Operation history; the complete record of a plan, operation, or `blob_<hash>`. |
+| `log` / `get ID` | read | Operation history, narrowed with `--paths`; the complete record of a plan, operation, or `blob_<hash>`. |
 
 Mutations answer `{id, outcome}` with `outcome` one of `passed`, `failed`
 (a declared expectation did not hold), or `error` (nothing was done). Add
@@ -89,7 +89,7 @@ Operations, applied in order:
 ```text
 {op:"replace", path, find:"text" | {text, after?, whole_lines?} | range:{start,end} | pattern:{pattern, language?}, target?, replace, occurrence?, expect_hash?}
 {op:"insert",  path, anchor:{text}, after?, text, expect_hash?}
-{op:"create",  path, text}
+{op:"create",  path, text, overwrite?}
 {op:"delete",  path, expect_hash?}
 {op:"move",    path, to, expect_hash?}
 ```

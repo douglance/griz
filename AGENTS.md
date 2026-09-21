@@ -23,6 +23,8 @@
 
 - Dependency direction is `griz → griz-store → griz-core`. `cargo xtask check` enforces it.
 - Every crate inherits workspace lints. Rust files have at most 300 physical lines; functions and closures at most 60 code lines. Complexity is limited to 10, nesting to 3, and function arguments to 5. Suppress lints only narrowly and only in tests.
+- The nesting limit counts an `impl` block and a struct literal as levels of their own, so a loop with an `if` inside a method already trips it. Move the work to a free function, give the type a small constructor, and combine conditions instead of nesting them. Leave headroom under 300 lines in a file two changes might both grow.
+- Tests never `unwrap`, `expect`, or `expect_err`: return `TestResult` and use `?`, or `let ... else { panic!(...) }`.
 - Keep tests in one test crate per package (`tests/<name>/main.rs` with modules) so shared fixtures never trip unused-code lints.
 - Isolate `GRIZ_HOME` and `XDG_DATA_HOME` in every test that runs the binary. The apoc composition test also isolates `APOC_HOME`, `APOC_MCP_ROOT`, and `APOC_RUNTIME_DIR`, and stops its daemon on drop.
 - Test a guarantee by breaking it: drop the fingerprint guard, take the first match, mark fuzzy matches `machine`, skip recovery or locks, replay a key as new. Each must turn a named test red. After restoring a mutated file, touch it so cargo rebuilds it.
