@@ -7,3 +7,4 @@ mod ladder;
 mod patch;
 mod plan;
 mod structural;
+mod syntax;

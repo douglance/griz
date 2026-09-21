@@ -2,7 +2,9 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
+
+use crate::syntax::{FileSyntax, PlanSyntax};
 
 /// A half-open byte range `[start, end)` in a file's text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -274,6 +276,13 @@ pub struct Plan {
     /// Every operation that could not be planned. A plan with problems must
     /// never be applied.
     pub problems: Vec<Problem>,
+    /// Overall syntax verdict, over every changed file's [`FileSyntax`].
+    /// Fact only: never `problems`, never refuses.
+    #[serde(default)]
+    pub syntax: PlanSyntax,
+    /// Parse facts for each changed file in an enabled language.
+    #[serde(default)]
+    pub file_syntax: BTreeMap<PathBuf, FileSyntax>,
 }
 
 impl Plan {

@@ -2,6 +2,7 @@
 
 use crate::{
     Edit, Op, Plan, Problem, ProblemKind, Rung, Source, content_hash, edits, overlay::Overlay,
+    syntax,
 };
 use std::path::Path;
 
@@ -25,6 +26,8 @@ pub fn build_plan(ops: &[Op], source: &dyn Source) -> Plan {
         }
     }
     plan.files = overlay.into_changes();
+    plan.file_syntax = syntax::annotate(&plan.files);
+    plan.syntax = syntax::plan_syntax(&plan.file_syntax);
     plan
 }
 

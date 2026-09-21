@@ -21,6 +21,7 @@ mod reindent;
 mod source;
 mod splice;
 mod structural;
+mod syntax;
 
 pub use diff::{FileDiff, render_diff};
 pub use find::{FindPage, FindQuery, Match, find};
@@ -33,3 +34,4 @@ pub use model::{
 pub use patch::{PatchError, parse_patch};
 pub use plan::build_plan;
 pub use source::{DiskSource, MapSource, Source};
+pub use syntax::{FileSyntax, PlanSyntax, SyntaxPosition, annotate, plan_syntax};
