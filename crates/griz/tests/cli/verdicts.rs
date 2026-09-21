@@ -170,6 +170,71 @@ fn a_replayed_absorb_renders_the_same_shape_as_the_first_answer() -> TestResult 
 }
 
 #[test]
+fn idempotency_keys_are_scoped_per_command() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write("a.rs", "a\n")?;
+    let ops = r#"[{"op":"replace","path":"a.rs","find":{"text":"a"},"replace":"A"}]"#;
+    let plan = griz.run(&[
+        "plan",
+        "--ops",
+        ops,
+        "--purpose",
+        "t",
+        "--idempotency-key",
+        "same",
+    ])?;
+    assert_eq!(plan.json["outcome"], "passed", "{}", plan.json);
+    let plan_id = plan.json["id"].as_str().ok_or("no plan id")?;
+    let applied = griz.run(&[
+        "apply",
+        plan_id,
+        "--purpose",
+        "t",
+        "--idempotency-key",
+        "same",
+    ])?;
+    assert_eq!(applied.json["outcome"], "passed", "{}", applied.json);
+    assert_ne!(applied.json["id"], plan.json["id"]);
+    Ok(())
+}
+
+#[test]
+fn a_graceful_failure_after_the_journal_keeps_the_key_for_the_retry() -> TestResult {
+    // The journal already recorded this apply as `applying` (a real change)
+    // before the failpoint fires, so a retry must not treat the key as free.
+    let griz = Griz::new()?;
+    griz.write("a.rs", "a\n")?;
+    let ops = r#"[{"op":"replace","path":"a.rs","find":{"text":"a"},"replace":"A"}]"#;
+    let plan = griz.id(&["plan", "--ops", ops], "plan")?;
+    let failed = griz
+        .command(&[
+            "apply",
+            &plan,
+            "--purpose",
+            "t",
+            "--idempotency-key",
+            "same",
+        ])
+        .env("GRIZ_FAILPOINT", "before_commit")
+        .output()?;
+    assert!(!failed.status.success());
+    let retry = griz.run(&[
+        "apply",
+        &plan,
+        "--purpose",
+        "t",
+        "--idempotency-key",
+        "same",
+    ])?;
+    assert_eq!(
+        retry.json["code"], "IDEMPOTENCY_RESULT_UNKNOWN",
+        "a retry after a graceful failure must not silently re-execute: {}",
+        retry.json
+    );
+    Ok(())
+}
+
+#[test]
 fn a_rejected_request_frees_its_key_for_the_corrected_retry() -> TestResult {
     let griz = Griz::new()?;
     griz.write("a.rs", "a\n")?;

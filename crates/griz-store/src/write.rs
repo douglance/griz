@@ -16,6 +16,18 @@ pub fn failpoint(name: &str) {
     }
 }
 
+/// Returns an error instead of aborting, for testing a graceful failure at a
+/// named point instead of a process crash.
+///
+/// # Errors
+/// Returns an error when the failpoint named `name` is armed.
+pub fn failpoint_result(name: &str) -> std::io::Result<()> {
+    if std::env::var(FAILPOINT_ENV).is_ok_and(|armed| armed == name) {
+        return Err(std::io::Error::other(format!("failpoint: {name}")));
+    }
+    Ok(())
+}
+
 /// A temporary sibling of `path`, unique to this process.
 #[must_use]
 pub fn temp_sibling(path: &Path) -> PathBuf {

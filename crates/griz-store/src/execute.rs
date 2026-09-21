@@ -2,7 +2,7 @@
 
 use crate::{
     FileWrite, Operation, OperationState, Store, StoreError,
-    write::{failpoint, stage},
+    write::{failpoint, failpoint_result, stage},
 };
 use std::path::{Path, PathBuf};
 
@@ -106,6 +106,7 @@ fn discard(staged: &[Option<PathBuf>]) {
 
 /// Moves a staged file into place, or deletes the file when nothing is staged.
 fn commit(path: &Path, staged: Option<PathBuf>) -> std::io::Result<()> {
+    failpoint_result("before_commit")?;
     match staged {
         Some(temp) => std::fs::rename(temp, path),
         None => match std::fs::remove_file(path) {
