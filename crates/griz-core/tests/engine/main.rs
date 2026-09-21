@@ -1,6 +1,7 @@
 //! Behavior of the pure edit engine.
 
 mod common;
+mod definitions;
 mod diff_merge;
 mod find;
 mod ladder;

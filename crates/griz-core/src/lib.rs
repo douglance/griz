@@ -7,6 +7,7 @@
 //! operation. Writing a plan to disk belongs to `griz-store`.
 
 mod anchor_input;
+mod definitions;
 mod diff;
 mod edits;
 mod find;
@@ -24,6 +25,7 @@ mod splice;
 mod structural;
 mod syntax;
 
+pub use definitions::{DiffItem, ItemChange, diff_items};
 pub use diff::{FileDiff, render_diff};
 pub use find::{FindPage, FindQuery, Match, find};
 pub use hash::content_hash;

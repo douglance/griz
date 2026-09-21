@@ -3,6 +3,7 @@
 mod common;
 mod compose;
 mod crash;
+mod definitions;
 mod flow;
 mod mcp;
 mod replay;
