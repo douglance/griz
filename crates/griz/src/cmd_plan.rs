@@ -89,13 +89,25 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
             &mutation,
             level,
             |store| {
-                let plan = build_plan(&ops, &DiskSource);
-                Ok(render::plan(
-                    &store.save_plan(&purpose, ops.clone(), plan)?,
-                    expect,
+                let mut plan = build_plan(&ops, &DiskSource);
+                let syntax = plan.syntax;
+                let file_syntax = std::mem::take(&mut plan.file_syntax);
+                let record = store.save_plan(&purpose, ops.clone(), plan)?;
+                Ok(render::with_syntax(
+                    render::plan(&record, expect),
+                    syntax,
+                    &file_syntax,
                 ))
             },
-            |store, id, outcome| Ok(render::plan(&store.plan(id)?, expect).with_outcome(outcome)),
+            |store, id, outcome| {
+                let record = store.plan(id)?;
+                let changes = store.plan_changes(&record)?;
+                let file_syntax = griz_core::annotate(&changes);
+                let syntax = griz_core::plan_syntax(&file_syntax);
+                let rendered =
+                    render::with_syntax(render::plan(&record, expect), syntax, &file_syntax);
+                Ok(rendered.with_outcome(outcome))
+            },
         )
     })
     .await

@@ -2,9 +2,12 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
+
+use crate::syntax::{FileSyntax, PlanSyntax};
 
 use crate::pattern_locator::PatternLocator;
+pub use crate::problem::{Problem, ProblemKind, Window};
 
 /// A half-open byte range `[start, end)` in a file's text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -220,61 +223,6 @@ pub struct FileChange {
     pub after_hash: Option<String>,
 }
 
-/// A line-numbered excerpt of real file text.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct Window {
-    /// 1-based first line.
-    pub line: usize,
-    /// The excerpt.
-    pub text: String,
-}
-
-/// Why an operation could not be planned.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ProblemKind {
-    /// The anchor matched nothing; `nearest` is the closest real text.
-    Missing {
-        /// Closest window, when the file has any text.
-        nearest: Option<Window>,
-    },
-    /// The anchor matched more than once.
-    Ambiguous {
-        /// 1-based line of every candidate.
-        lines: Vec<usize>,
-    },
-    /// The file no longer has the fingerprint the caller expected.
-    Stale {
-        /// Fingerprint the caller expected.
-        expected: String,
-        /// Fingerprint found, absent when the file is gone.
-        actual: Option<String>,
-    },
-    /// A create or move target already exists.
-    Exists,
-    /// The file does not exist.
-    NotFound,
-    /// A byte range does not fit the text or overlaps an earlier edit.
-    BadRange,
-    /// The operation is malformed.
-    Invalid {
-        /// What is wrong.
-        message: String,
-    },
-}
-
-/// One operation that could not be planned.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct Problem {
-    /// Index of the operation.
-    pub op: usize,
-    /// File it targeted.
-    pub path: PathBuf,
-    /// What went wrong.
-    #[serde(flatten)]
-    pub kind: ProblemKind,
-}
-
 /// The complete, unwritten result of a set of operations.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Plan {
@@ -285,6 +233,13 @@ pub struct Plan {
     /// Every operation that could not be planned. A plan with problems must
     /// never be applied.
     pub problems: Vec<Problem>,
+    /// Overall syntax verdict, over every changed file's [`FileSyntax`].
+    /// Fact only: never `problems`, never refuses.
+    #[serde(default)]
+    pub syntax: PlanSyntax,
+    /// Parse facts for each changed file in an enabled language.
+    #[serde(default)]
+    pub file_syntax: BTreeMap<PathBuf, FileSyntax>,
 }
 
 impl Plan {

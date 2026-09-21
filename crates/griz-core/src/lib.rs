@@ -7,6 +7,7 @@
 //! operation. Writing a plan to disk belongs to `griz-store`.
 
 mod anchor_input;
+mod definitions;
 mod diff;
 mod edits;
 mod find;
@@ -20,13 +21,17 @@ mod pattern_edit;
 mod pattern_locator;
 mod plan;
 mod position;
+mod problem;
 mod reindent;
+mod scope;
 mod source;
 mod splice;
 mod structural;
+mod syntax;
 mod uri;
 mod workspace_edit;
 
+pub use definitions::{DiffItem, ItemChange, diff_items};
 pub use diff::{FileDiff, render_diff};
 pub use find::{FindPage, FindQuery, Match, find};
 pub use hash::content_hash;
@@ -40,6 +45,7 @@ pub use pattern_locator::PatternLocator;
 pub use plan::build_plan;
 pub use position::{Position, PositionEncoding};
 pub use source::{DiskSource, MapSource, Source};
+pub use syntax::{FileSyntax, PlanSyntax, SyntaxPosition, annotate, plan_syntax};
 pub use workspace_edit::{
     CreateFile, DeleteFile, DocumentChange, Range, RenameFile, TextDocumentEdit,
     TextDocumentIdentifier, TextEdit, WorkspaceEdit, WorkspaceEditError,

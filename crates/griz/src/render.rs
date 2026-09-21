@@ -1,9 +1,13 @@
 //! Turns stored plans and operations into verdicts.
 
 use crate::verdict::{Outcome, Rendered, unmet};
-use griz_core::{ChangeKind, Confidence, Problem, ProblemKind};
+use griz_core::{ChangeKind, Confidence, FileSyntax, PlanSyntax, Problem, ProblemKind};
 use griz_store::{Absorbed, Operation, OperationState, PlanRecord};
 use serde_json::{Value, json};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 /// Expected counts a caller declared for a plan.
 #[derive(Debug, Clone, Copy, Default)]
@@ -65,6 +69,36 @@ pub fn plan_with(record: &PlanRecord, outcome: Outcome, reason: Option<String>) 
             "files": record.files.iter().map(|f| json!({ "path": f.path, "kind": f.kind })).collect::<Vec<_>>(),
         }),
         record: to_value(record),
+    }
+}
+
+/// Attaches syntax facts computed for a plan build or replay: the aggregate
+/// verdict in `summary` (info and up) and each file's facts in `detail` and
+/// the traced `record` (debug and up, and trace).
+#[must_use]
+pub fn with_syntax(
+    mut rendered: Rendered,
+    syntax: PlanSyntax,
+    file_syntax: &BTreeMap<PathBuf, FileSyntax>,
+) -> Rendered {
+    rendered.summary["syntax"] = json!(syntax);
+    rendered.record["syntax"] = json!(syntax);
+    attach_file_syntax(&mut rendered.detail, file_syntax);
+    attach_file_syntax(&mut rendered.record, file_syntax);
+    rendered
+}
+
+fn attach_file_syntax(value: &mut Value, file_syntax: &BTreeMap<PathBuf, FileSyntax>) {
+    let Some(files) = value.get_mut("files").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for file in files {
+        let Some(path) = file.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        if let Some(fact) = file_syntax.get(Path::new(path)) {
+            file["syntax"] = json!(fact);
+        }
     }
 }
 

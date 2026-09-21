@@ -90,6 +90,10 @@ struct FindOptions {
     expect_matches: Option<usize>,
     /// Directory relative paths resolve from. Defaults to the current directory.
     root: Option<String>,
+    /// Only match inside syntax nodes of these kinds, such as comment or
+    /// string, in enabled languages. Files in another language are skipped
+    /// once this is set. Aliases comment and string resolve per language.
+    within: Option<Vec<String>>,
 }
 
 /// The `find` command.
@@ -120,6 +124,7 @@ fn run_find(options: FindOptions) -> Result<TypedResult<Value>, CmdError> {
         language: options.language,
         offset: options.offset,
         limit: options.limit,
+        within: options.within.unwrap_or_default(),
     };
     let page = find(&query).map_err(CmdError::invalid)?;
     let mut body = serde_json::to_value(&page).map_err(|e| CmdError::invalid(e.to_string()))?;

@@ -1,6 +1,9 @@
 //! Renders planned changes as unified diffs.
 
-use crate::{ChangeKind, FileChange};
+use crate::{
+    ChangeKind, FileChange,
+    definitions::{DiffItem, diff_items},
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
@@ -19,6 +22,9 @@ pub struct FileDiff {
     pub removed: usize,
     /// Unified diff text with three lines of context.
     pub text: String,
+    /// Named definitions this file's before and after disagree on, in an
+    /// enabled language.
+    pub items: Vec<DiffItem>,
 }
 
 /// Renders every change as a unified diff, naming files relative to `base`
@@ -58,11 +64,17 @@ fn render_one(change: &FileChange, base: &Path) -> FileDiff {
         .context_radius(3)
         .header(&old_header, &new_header)
         .to_string();
+    let items = diff_items(
+        &change.path,
+        change.before.as_deref(),
+        change.after.as_deref(),
+    );
     FileDiff {
         path: change.path.clone(),
         kind: change.kind,
         added,
         removed,
         text,
+        items,
     }
 }

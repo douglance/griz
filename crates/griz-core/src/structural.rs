@@ -80,7 +80,7 @@ impl Shape {
     /// The language to search `path` with, honoring an explicit override and
     /// otherwise the file's own extension, both narrowed to the enabled set.
     fn resolve(&self, path: &Path) -> Option<SupportLang> {
-        let from_extension = SupportLang::from_path(path).filter(|lang| is_enabled(*lang));
+        let from_extension = enabled_language(path);
         match self.language {
             Some(explicit) => from_extension.filter(|lang| *lang == explicit),
             None => from_extension,
@@ -107,6 +107,19 @@ impl Shape {
 
 fn is_enabled(language: SupportLang) -> bool {
     ENABLED_LANGUAGES.iter().any(|(lang, _)| *lang == language)
+}
+
+/// The language `path`'s extension resolves to, narrowed to the enabled set.
+pub(crate) fn enabled_language(path: &Path) -> Option<SupportLang> {
+    SupportLang::from_path(path).filter(|lang| is_enabled(*lang))
+}
+
+/// The name paired with `language` in the enabled set.
+pub(crate) fn language_name(language: SupportLang) -> &'static str {
+    ENABLED_LANGUAGES
+        .iter()
+        .find(|(lang, _)| *lang == language)
+        .map_or("unknown", |(_, name)| name)
 }
 
 fn parse_language(name: &str) -> Result<SupportLang, String> {

@@ -66,7 +66,9 @@ fn diff(store: &Store, id: &str, how: &Address, base: &Path) -> Result<Value, Cm
     let selected = address(&text, how).map_err(CmdError::invalid)?;
     let mut body = json!({
         "id": id,
-        "files": diffs.iter().map(|d| json!({ "path": d.path, "kind": d.kind, "added": d.added, "removed": d.removed })).collect::<Vec<_>>(),
+        "files": diffs.iter().map(|d| json!({
+            "path": d.path, "kind": d.kind, "added": d.added, "removed": d.removed, "items": d.items,
+        })).collect::<Vec<_>>(),
     });
     merge_lines(&mut body, selected);
     Ok(body)
