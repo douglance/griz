@@ -9,7 +9,7 @@ use crate::{
     verdict::{Outcome, Verbosity},
 };
 use griz_core::Confidence;
-use griz_store::{ApplyRequest, OnStale};
+use griz_store::{Absorbed, ApplyRequest, OnStale};
 use incurs::command::{CommandDef, TypedContext};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -191,7 +191,13 @@ async fn absorb(id: String, options: AbsorbOptions) -> Result<(Value, Outcome), 
             level,
             |store| Ok(render::absorbed(&store.absorb(&id, &paths, &purpose)?)),
             |store, id, outcome| {
-                Ok(render::operation(&store.operation(id)?, None).with_outcome(outcome))
+                let operation = store.operation(id)?;
+                let result = Absorbed {
+                    absorbed: operation.absorbed.clone(),
+                    skipped: Vec::new(),
+                    operation,
+                };
+                Ok(render::absorbed(&result).with_outcome(outcome))
             },
         )
     })

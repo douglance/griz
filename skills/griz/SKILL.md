@@ -58,7 +58,9 @@ the edit that follows is unchanged.
 
 Run the formatter after `apply`, then `griz.absorb({ operation, purpose,
 idempotency_key })`. Undo then restores the text from before the apply instead
-of refusing the reformatted files.
+of refusing the reformatted files. `absorb` takes any later change to the
+written files, not only a formatter's, so run it right after the formatter,
+before anything else can touch the same files.
 
 ## Patch text
 

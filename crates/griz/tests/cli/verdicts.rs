@@ -120,6 +120,56 @@ fn a_repeated_key_replays_and_a_changed_input_conflicts() -> TestResult {
 }
 
 #[test]
+fn a_replayed_absorb_renders_the_same_shape_as_the_first_answer() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write("a.rs", "fn  f() {}\n")?;
+    let ops = r#"[{"op":"replace","path":"a.rs","find":{"text":"f()"},"replace":"g()"}]"#;
+    let plan = griz.id(&["plan", "--ops", ops], "plan")?;
+    let op = griz.id(&["apply", &plan], "apply")?;
+    griz.write("a.rs", "fn g() {}\n")?;
+    let base = [
+        "absorb",
+        op.as_str(),
+        "--purpose",
+        "t",
+        "--idempotency-key",
+        "absorb",
+        "--verbosity",
+        "info",
+    ];
+    let first = griz.run(&base)?;
+    assert_eq!(first.json["outcome"], "passed", "{}", first.json);
+    assert!(first.json["summary"]["absorbed"].is_u64(), "{}", first.json);
+    assert!(first.json["summary"]["skipped"].is_u64(), "{}", first.json);
+    let again = griz.run(&base)?;
+    assert_eq!(again.json["replayed"], true);
+    assert_eq!(again.json["id"], first.json["id"]);
+    let (mut first_keys, mut again_keys) = (
+        first
+            .json
+            .as_object()
+            .ok_or("no object")?
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>(),
+        again
+            .json
+            .as_object()
+            .ok_or("no object")?
+            .keys()
+            .filter(|k| *k != "replayed")
+            .cloned()
+            .collect::<Vec<_>>(),
+    );
+    first_keys.sort();
+    again_keys.sort();
+    assert_eq!(first_keys, again_keys, "{} vs {}", first.json, again.json);
+    assert!(again.json["summary"]["absorbed"].is_u64(), "{}", again.json);
+    assert!(again.json["summary"]["skipped"].is_u64(), "{}", again.json);
+    Ok(())
+}
+
+#[test]
 fn a_rejected_request_frees_its_key_for_the_corrected_retry() -> TestResult {
     let griz = Griz::new()?;
     griz.write("a.rs", "a\n")?;

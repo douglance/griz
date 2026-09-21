@@ -120,3 +120,30 @@ fn absorbing_skips_deleted_files_and_changes_nothing_on_disk() -> TestResult {
     assert_eq!(fx.read("gone.rs")?, "back\n");
     Ok(())
 }
+
+#[test]
+fn absorb_on_an_unapplied_operation_errors() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.write("a.rs", "a\n")?;
+    let plan = fx.plan(vec![fx.replace("a.rs", "missing", "x")])?;
+    let failed = fx.store.apply(&request(&plan))?;
+    assert_eq!(failed.state, OperationState::Failed);
+    assert!(fx.store.absorb(&failed.id, &[], "formatted").is_err());
+    Ok(())
+}
+
+#[test]
+fn absorb_errors_on_a_path_the_operation_never_wrote() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.write("a.rs", "a\n")?;
+    fx.write("untouched.rs", "u\n")?;
+    let plan = fx.plan(vec![fx.replace("a.rs", "a", "A")])?;
+    let applied = fx.store.apply(&request(&plan))?;
+    let error = fx
+        .store
+        .absorb(&applied.id, &[fx.path("untouched.rs")], "formatted")
+        .err()
+        .ok_or("expected an error for a path the operation never wrote")?;
+    assert!(error.to_string().contains("untouched.rs"), "{error}");
+    Ok(())
+}

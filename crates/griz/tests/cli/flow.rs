@@ -59,6 +59,61 @@ fn patch_files_plan_like_operations() -> TestResult {
 }
 
 #[test]
+fn a_structural_pattern_matches_across_formatting() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write("a.rs", "fn f() {\n    foo(1, bar, baz);\n}\n")?;
+    let found = griz.run(&["find", "--pattern", "foo($A, $$$REST)"])?;
+    assert_eq!(found.json["total"], 1, "{}", found.json);
+    assert_eq!(found.json["matches"][0]["vars"]["A"], "1");
+    assert_eq!(found.json["matches"][0]["vars"]["REST"], "bar, baz");
+    Ok(())
+}
+
+#[test]
+fn absorb_folds_a_formatter_run_so_undo_restores_the_pre_apply_text() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write("a.rs", "fn  f() {}\n")?;
+    let ops = r#"[{"op":"replace","path":"a.rs","find":{"text":"f()"},"replace":"g()"}]"#;
+    let plan = griz.id(&["plan", "--ops", ops], "plan")?;
+    let op = griz.id(&["apply", &plan], "apply")?;
+    griz.write("a.rs", "fn g() {}\n")?;
+    let absorbed = griz.run(&[
+        "absorb",
+        &op,
+        "--purpose",
+        "t",
+        "--idempotency-key",
+        "absorb",
+    ])?;
+    assert_eq!(absorbed.json["outcome"], "passed", "{}", absorbed.json);
+    griz.id(&["undo", &op], "undo")?;
+    assert_eq!(griz.read("a.rs")?, "fn  f() {}\n");
+    Ok(())
+}
+
+#[test]
+fn absorb_errors_on_a_path_the_operation_never_wrote() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write("a.rs", "a\n")?;
+    griz.write("untouched.rs", "u\n")?;
+    let ops = r#"[{"op":"replace","path":"a.rs","find":{"text":"a"},"replace":"A"}]"#;
+    let plan = griz.id(&["plan", "--ops", ops], "plan")?;
+    let op = griz.id(&["apply", &plan], "apply")?;
+    let run = griz.run(&[
+        "absorb",
+        &op,
+        "--paths",
+        "untouched.rs",
+        "--purpose",
+        "t",
+        "--idempotency-key",
+        "absorb",
+    ])?;
+    assert_eq!(run.json["code"], "VALIDATION_ERROR", "{}", run.json);
+    Ok(())
+}
+
+#[test]
 fn select_applies_only_the_chosen_files() -> TestResult {
     let griz = Griz::new()?;
     griz.write("a.rs", "a\n")?;

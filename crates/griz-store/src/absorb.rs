@@ -46,6 +46,13 @@ impl Store {
                 "only an applied operation can absorb later changes".into(),
             ));
         }
+        let written: Vec<&PathBuf> = operation.files.iter().map(|file| &file.path).collect();
+        if let Some(unknown) = paths.iter().find(|path| !written.contains(path)) {
+            return Err(StoreError::Invalid(format!(
+                "absorb: `{}` is not a file this operation wrote",
+                unknown.display()
+            )));
+        }
         let chosen: Vec<PathBuf> = operation
             .files
             .iter()
