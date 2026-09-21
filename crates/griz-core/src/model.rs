@@ -91,12 +91,16 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expect_hash: Option<String>,
     },
-    /// Create a file that must not exist yet.
+    /// Create a file, which must not exist unless `overwrite` is set.
     Create {
         /// File to create.
         path: PathBuf,
         /// Full contents.
         text: String,
+        /// Replace the file when it already exists, instead of refusing.
+        /// Replacing a whole file needs no range and no byte count.
+        #[serde(default)]
+        overwrite: bool,
     },
     /// Delete a file that must exist.
     Delete {

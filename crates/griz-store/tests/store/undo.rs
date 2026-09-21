@@ -15,6 +15,7 @@ fn undo_restores_every_file_byte_for_byte() -> TestResult {
         Op::Create {
             path: fx.path("new.rs"),
             text: "n\n".into(),
+            overwrite: false,
         },
     ])?;
     let applied = fx.store.apply(&request(&plan))?;

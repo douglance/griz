@@ -135,6 +135,7 @@ fn create_and_delete_apply_as_file_operations() -> TestResult {
         Op::Create {
             path: fx.path("dir/new.rs"),
             text: "n\n".into(),
+            overwrite: false,
         },
         Op::Delete {
             path: fx.path("gone.rs"),

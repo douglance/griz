@@ -5,6 +5,7 @@ mod definitions;
 mod diff_merge;
 mod find;
 mod ladder;
+mod overwrite;
 mod patch;
 mod pattern;
 mod plan;

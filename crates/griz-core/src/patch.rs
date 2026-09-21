@@ -177,6 +177,7 @@ fn to_ops(block: Block) -> Vec<Op> {
         Block::Add { path, lines } => vec![Op::Create {
             path,
             text: joined(&lines),
+            overwrite: false,
         }],
         Block::Delete { path } => vec![Op::Delete {
             path,

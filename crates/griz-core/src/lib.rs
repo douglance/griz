@@ -30,6 +30,7 @@ mod structural;
 mod syntax;
 mod uri;
 mod workspace_edit;
+mod workspace_edit_ops;
 
 pub use definitions::{DiffItem, ItemChange, diff_items};
 pub use diff::{FileDiff, render_diff};
@@ -49,5 +50,5 @@ pub use syntax::{FileSyntax, PlanSyntax, SyntaxPosition, annotate, plan_syntax};
 pub use workspace_edit::{
     CreateFile, DeleteFile, DocumentChange, Range, RenameFile, TextDocumentEdit,
     TextDocumentIdentifier, TextEdit, WorkspaceEdit, WorkspaceEditError,
-    to_ops as workspace_edit_to_ops,
 };
+pub use workspace_edit_ops::to_ops as workspace_edit_to_ops;

@@ -48,7 +48,11 @@ fn plan_op(overlay: &mut Overlay<'_>, index: usize, op: &Op) -> OpResult {
             let slot = overlay.slot(path).map_err(invalid)?;
             edits::insert(slot, index, path, anchor, (*after, text))
         }
-        Op::Create { path, text } => create(overlay, index, path, text),
+        Op::Create {
+            path,
+            text,
+            overwrite,
+        } => create(overlay, index, path, text, *overwrite),
         Op::Delete { path, expect_hash } => {
             guard(overlay, path, expect_hash.as_deref())?;
             let slot = overlay.slot(path).map_err(invalid)?;
@@ -137,9 +141,15 @@ fn guard(
     })
 }
 
-fn create(overlay: &mut Overlay<'_>, index: usize, path: &Path, text: &str) -> OpResult {
+fn create(
+    overlay: &mut Overlay<'_>,
+    index: usize,
+    path: &Path,
+    text: &str,
+    overwrite: bool,
+) -> OpResult {
     let slot = overlay.slot(path).map_err(invalid)?;
-    if slot.current.is_some() {
+    if slot.current.is_some() && !overwrite {
         return Err(ProblemKind::Exists);
     }
     slot.current = Some(text.to_string());
