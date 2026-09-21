@@ -9,6 +9,19 @@ use serde_json::Value;
 use std::path::Path;
 
 /// Parses `text` as `utf-8`, `utf-16`, or `utf-32`; `None` defaults to
+/// Whether the caller requires the plan's result to still parse. Only
+/// `clean` is accepted; nothing declared means no expectation.
+pub fn expect_clean(text: Option<&str>) -> Result<bool, CmdError> {
+    match text {
+        None => Ok(false),
+        Some("clean") => Ok(true),
+        Some(other) => Err(CmdError::invalid(format!(
+            "expect_syntax must be `clean`, not `{other}`"
+        ))),
+    }
+}
+
+/// Parses `text` as `utf-8`, `utf-16`, or `utf-32`; `None` defaults to
 /// `utf-16`, the LSP default.
 pub fn position_encoding(text: Option<&str>) -> Result<PositionEncoding, CmdError> {
     match text {

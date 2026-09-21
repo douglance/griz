@@ -3,7 +3,7 @@
 use crate::{
     annotations,
     context::{CmdError, resolve, root, with_store},
-    plan_input::{collect_ops, position_encoding},
+    plan_input::{collect_ops, expect_clean, position_encoding},
     plan_schema::plan_input_schema,
     receipt::{Mutation, run_mutation},
     render::{self, PlanExpect},
@@ -46,6 +46,10 @@ struct PlanOptions {
     expect_edits: Option<usize>,
     /// Number of files the plan must change.
     expect_files: Option<usize>,
+    /// Require the plan to leave every file in a supported language parsing:
+    /// `clean` fails a plan that introduces a syntax error. Files griz has no
+    /// parser for are unaffected.
+    expect_syntax: Option<String>,
     /// Response detail: off, error, warn, info, debug, or trace.
     verbosity: Option<String>,
 }
@@ -77,10 +81,11 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
         edits: options.expect_edits,
         files: options.expect_files,
     };
+    let expect_clean = expect_clean(options.expect_syntax.as_deref())?;
     let mutation = Mutation {
         command: "plan",
         key: options.idempotency_key,
-        input: json!({ "ops": ops, "expect": [expect.edits, expect.files] }),
+        input: json!({ "ops": ops, "expect": [expect.edits, expect.files], "syntax": expect_clean }),
     };
     let purpose = options.purpose;
     with_store(move |store| {
@@ -93,11 +98,9 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
                 let syntax = plan.syntax;
                 let file_syntax = std::mem::take(&mut plan.file_syntax);
                 let record = store.save_plan(&purpose, ops.clone(), plan)?;
-                Ok(render::with_syntax(
-                    render::plan(&record, expect),
-                    syntax,
-                    &file_syntax,
-                ))
+                let rendered =
+                    render::with_syntax(render::plan(&record, expect), syntax, &file_syntax);
+                Ok(render::expect_clean_syntax(rendered, syntax, expect_clean))
             },
             |store, id, outcome| {
                 let record = store.plan(id)?;
@@ -106,6 +109,7 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
                 let syntax = griz_core::plan_syntax(&file_syntax);
                 let rendered =
                     render::with_syntax(render::plan(&record, expect), syntax, &file_syntax);
+                let rendered = render::expect_clean_syntax(rendered, syntax, expect_clean);
                 Ok(rendered.with_outcome(outcome))
             },
         )

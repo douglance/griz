@@ -88,6 +88,19 @@ pub fn with_syntax(
     rendered
 }
 
+/// Fails a rendered plan that introduced syntax errors, when the caller
+/// declared it must stay clean. The fact is griz's; the expectation is the
+/// caller's.
+#[must_use]
+pub fn expect_clean_syntax(mut rendered: Rendered, syntax: PlanSyntax, expected: bool) -> Rendered {
+    if !expected || rendered.outcome != Outcome::Passed || syntax != PlanSyntax::IntroducedErrors {
+        return rendered;
+    }
+    rendered.outcome = Outcome::Failed;
+    rendered.reason = Some("expected syntax clean, observed introduced_errors".to_string());
+    rendered
+}
+
 fn attach_file_syntax(value: &mut Value, file_syntax: &BTreeMap<PathBuf, FileSyntax>) {
     let Some(files) = value.get_mut("files").and_then(Value::as_array_mut) else {
         return;
