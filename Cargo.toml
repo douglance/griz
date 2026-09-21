@@ -11,6 +11,8 @@ repository = "https://github.com/douglance/griz"
 
 [workspace.dependencies]
 anyhow = "1"
+ast-grep-core = "0.45.3"
+ast-grep-language = { version = "0.45.3", default-features = false, features = ["tree-sitter-go", "tree-sitter-javascript", "tree-sitter-python", "tree-sitter-rust", "tree-sitter-swift", "tree-sitter-typescript"] }
 diffy = "0.4"
 dirs = "6"
 ignore = "0.4"

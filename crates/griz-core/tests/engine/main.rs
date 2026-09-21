@@ -6,3 +6,4 @@ mod find;
 mod ladder;
 mod patch;
 mod plan;
+mod structural;

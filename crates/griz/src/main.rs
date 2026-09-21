@@ -22,7 +22,7 @@ use incurs::{
 };
 use serde_json::Value;
 
-const INSTRUCTIONS: &str = "griz edits code as composable primitives. find returns matches with byte ranges and file fingerprints; plan turns operations or Codex patch text into a plan id without writing; diff shows it; select keeps part of it; apply writes it all-or-nothing and returns an operation id; undo restores it. Mutations take purpose and idempotency_key and answer {id, outcome}; pass verbosity trace to read the full record.";
+const INSTRUCTIONS: &str = "griz edits code as composable primitives. find returns matches with byte ranges and file fingerprints; plan turns operations or Codex patch text into a plan id without writing; diff shows it; select keeps part of it; apply writes it all-or-nothing and returns an operation id; absorb folds a later formatter run into that operation; undo restores it. Mutations take purpose and idempotency_key and answer {id, outcome}; pass verbosity trace to read the full record.";
 
 fn build_cli() -> Cli {
     Cli::create("griz")
@@ -44,6 +44,7 @@ fn build_cli() -> Cli {
         .command("diff", cmd_inspect::diff_command())
         .command("apply", cmd_apply::apply_command())
         .command("undo", cmd_apply::undo_command())
+        .command("absorb", cmd_apply::absorb_command())
         .command("log", cmd_inspect::log_command())
         .command("get", cmd_inspect::get_command())
 }

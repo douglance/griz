@@ -1,11 +1,19 @@
-//! Finds text across files and returns matches a program can edit directly.
+//! Finds code across files and returns matches a program can edit directly.
+//!
+//! Text queries take a literal or a regular expression; structural queries take
+//! an ast-grep pattern such as `foo($A, $$$REST)`. Every query answers with the
+//! same match shape, so an edit built from one kind works for the other.
 
-use crate::{ByteRange, content_hash, matcher::line_of};
+use crate::{ByteRange, content_hash, matcher::line_of, structural::Shape};
 use ignore::{WalkBuilder, overrides::OverrideBuilder};
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    ops::Range,
+    path::{Path, PathBuf},
+};
 
 /// What to search and where.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -15,10 +23,16 @@ pub struct FindQuery {
     /// Glob patterns a file must match, such as `**/*.rs`. `!` excludes.
     #[serde(default)]
     pub globs: Vec<String>,
-    /// Literal text to find. Exactly one of `literal` and `regex` is required.
+    /// Literal text to find. Give exactly one of `literal`, `regex`, `pattern`.
     pub literal: Option<String>,
     /// Regular expression to find, with capture groups.
     pub regex: Option<String>,
+    /// Structural pattern with `$VAR` and `$$$VARS` metavariables.
+    #[serde(default)]
+    pub pattern: Option<String>,
+    /// Language for a structural pattern; defaults to each file's extension.
+    #[serde(default)]
+    pub language: Option<String>,
     /// Matches to skip, for paging.
     #[serde(default)]
     pub offset: usize,
@@ -39,8 +53,11 @@ pub struct Match {
     pub range: ByteRange,
     /// Matched text.
     pub text: String,
-    /// Capture groups in order; group 0 is the whole match and is omitted.
+    /// Regex capture groups in order; group 0 is the whole match and is omitted.
     pub captures: Vec<Option<String>>,
+    /// Text captured by each structural metavariable, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub vars: BTreeMap<String, String>,
     /// Fingerprint of the whole file when searched.
     pub file_hash: String,
 }
@@ -58,18 +75,75 @@ pub struct FindPage {
     pub next: Option<usize>,
 }
 
+/// A located span, before it becomes a [`Match`].
+#[derive(Debug, Clone)]
+pub struct Hit {
+    /// Byte range in the file.
+    pub range: Range<usize>,
+    /// Regex capture groups.
+    pub captures: Vec<Option<String>>,
+    /// Structural metavariables.
+    pub vars: BTreeMap<String, String>,
+}
+
+enum Matcher {
+    Text(Regex),
+    Shape(Shape),
+}
+
+impl Matcher {
+    fn new(query: &FindQuery) -> Result<Self, String> {
+        match (&query.literal, &query.regex, &query.pattern) {
+            (Some(literal), None, None) => text(&regex::escape(literal)),
+            (None, Some(regex), None) => text(regex),
+            (None, None, Some(pattern)) => {
+                Shape::new(pattern, query.language.as_deref()).map(Self::Shape)
+            }
+            _ => Err("give exactly one of `literal`, `regex`, or `pattern`".to_string()),
+        }
+    }
+
+    fn hits(&self, path: &Path, text: &str) -> Vec<Hit> {
+        match self {
+            Self::Text(regex) => regex
+                .captures_iter(text)
+                .map(|captures| Hit {
+                    range: captures.get(0).map_or(0..0, |m| m.range()),
+                    captures: captures
+                        .iter()
+                        .skip(1)
+                        .map(|group| group.map(|m| m.as_str().to_string()))
+                        .collect(),
+                    vars: BTreeMap::new(),
+                })
+                .collect(),
+            Self::Shape(shape) => shape.hits(path, text),
+        }
+    }
+}
+
+fn text(source: &str) -> Result<Matcher, String> {
+    if source.is_empty() {
+        return Err("the pattern is empty".to_string());
+    }
+    Regex::new(source)
+        .map(Matcher::Text)
+        .map_err(|error| error.to_string())
+}
+
 /// Runs a query.
 ///
 /// # Errors
 /// Returns a message for a bad pattern, a bad glob, or no pattern at all.
 pub fn find(query: &FindQuery) -> Result<FindPage, String> {
-    let pattern = pattern(query)?;
+    let matcher = Matcher::new(query)?;
     let mut page = FindPage::default();
     for path in files(query)? {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
-        collect_file(&mut page, query, &pattern, (&path, &text));
+        let hits = matcher.hits(&path, &text);
+        collect_file(&mut page, query, hits, (&path, &text));
     }
     let shown = query.offset + page.matches.len();
     page.next = (shown < page.total).then_some(shown);
@@ -79,34 +153,21 @@ pub fn find(query: &FindQuery) -> Result<FindPage, String> {
 fn collect_file(
     page: &mut FindPage,
     query: &FindQuery,
-    pattern: &Regex,
+    hits: Vec<Hit>,
     (path, text): (&Path, &str),
 ) {
-    let hits: Vec<_> = pattern.captures_iter(text).collect();
     if hits.is_empty() {
         return;
     }
     page.files += 1;
     let hash = content_hash(text);
-    for captures in hits {
+    for hit in hits {
         let keep = page.total >= query.offset && page.matches.len() < query.limit;
         page.total += 1;
         if keep {
-            page.matches.push(to_match(path, text, &captures, &hash));
+            page.matches.push(to_match(path, text, hit, &hash));
         }
     }
-}
-
-fn pattern(query: &FindQuery) -> Result<Regex, String> {
-    let source = match (&query.literal, &query.regex) {
-        (Some(literal), None) => regex::escape(literal),
-        (None, Some(regex)) => regex.clone(),
-        _ => return Err("give exactly one of `literal` or `regex`".to_string()),
-    };
-    if source.is_empty() {
-        return Err("the pattern is empty".to_string());
-    }
-    Regex::new(&source).map_err(|error| error.to_string())
 }
 
 /// Every searchable file, sorted so pages are stable.
@@ -139,8 +200,8 @@ fn overrides(root: &Path, globs: &[String]) -> Result<ignore::overrides::Overrid
     builder.build().map_err(|error| error.to_string())
 }
 
-fn to_match(path: &Path, text: &str, captures: &regex::Captures<'_>, hash: &str) -> Match {
-    let whole = captures.get(0).map_or(0..0, |m| m.range());
+fn to_match(path: &Path, text: &str, hit: Hit, hash: &str) -> Match {
+    let whole = hit.range;
     let line_start = text[..whole.start].rfind('\n').map_or(0, |at| at + 1);
     Match {
         path: path.to_path_buf(),
@@ -150,12 +211,9 @@ fn to_match(path: &Path, text: &str, captures: &regex::Captures<'_>, hash: &str)
             start: whole.start,
             end: whole.end,
         },
-        text: text[whole.clone()].to_string(),
-        captures: captures
-            .iter()
-            .skip(1)
-            .map(|group| group.map(|m| m.as_str().to_string()))
-            .collect(),
+        text: text[whole].to_string(),
+        captures: hit.captures,
+        vars: hit.vars,
         file_hash: hash.to_string(),
     }
 }

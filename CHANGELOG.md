@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Structural `find` with `pattern` and `language`: ast-grep patterns with `$VAR` and `$$$VARS`, answered in the same match shape as text queries.
+- `absorb`: fold a formatter run into an operation so undo keeps working.
+- A plain string is accepted as an anchor.
+
 ## 0.1.0
 
 - `read`, `find`, `plan`, `select`, `diff`, `apply`, `undo`, `log`, and `get` as CLI commands and direct MCP tools.

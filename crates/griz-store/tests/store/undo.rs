@@ -86,3 +86,37 @@ fn a_failed_operation_cannot_be_undone() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn absorbing_a_formatter_run_keeps_undo_working() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.write("a.rs", "fn  f() {}\n")?;
+    let plan = fx.plan(vec![fx.replace("a.rs", "f()", "g()")])?;
+    let applied = fx.store.apply(&request(&plan))?;
+    fx.write("a.rs", "fn g() {}\n")?;
+    let refused = fx.store.undo(&applied.id, &[], "revert before absorbing")?;
+    assert_eq!(refused.state, OperationState::Failed);
+    let absorbed = fx.store.absorb(&applied.id, &[], "formatted")?;
+    assert_eq!(absorbed.absorbed, vec![fx.path("a.rs")]);
+    assert_eq!(absorbed.operation.absorbed, vec![fx.path("a.rs")]);
+    let undone = fx.store.undo(&applied.id, &[], "revert")?;
+    assert_eq!(undone.state, OperationState::Applied, "{:?}", undone.reason);
+    assert_eq!(fx.read("a.rs")?, "fn  f() {}\n");
+    Ok(())
+}
+
+#[test]
+fn absorbing_skips_deleted_files_and_changes_nothing_on_disk() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.write("gone.rs", "g\n")?;
+    let plan = fx.plan(vec![Op::Delete {
+        path: fx.path("gone.rs"),
+        expect_hash: None,
+    }])?;
+    let applied = fx.store.apply(&request(&plan))?;
+    fx.write("gone.rs", "back\n")?;
+    let absorbed = fx.store.absorb(&applied.id, &[], "formatted")?;
+    assert_eq!(absorbed.skipped, vec![fx.path("gone.rs")]);
+    assert_eq!(fx.read("gone.rs")?, "back\n");
+    Ok(())
+}

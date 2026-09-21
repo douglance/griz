@@ -4,6 +4,7 @@
 //! journaled as `applying` before the first rename, so an interrupted apply is
 //! finished by the next process that opens the store.
 
+mod absorb;
 mod apply;
 mod blobs;
 mod db;
@@ -16,6 +17,7 @@ mod receipts;
 mod recovery;
 mod write;
 
+pub use absorb::Absorbed;
 pub use apply::{ApplyRequest, OnStale};
 pub use error::StoreError;
 pub use journal::{FileWrite, Operation, OperationKind, OperationState};

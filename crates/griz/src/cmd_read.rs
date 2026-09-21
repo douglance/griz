@@ -75,6 +75,11 @@ struct FindOptions {
     literal: Option<String>,
     /// Regular expression to find; capture groups are returned.
     regex: Option<String>,
+    /// Structural pattern with $VAR and $$$VARS metavariables, such as foo($A, $$$REST).
+    pattern: Option<String>,
+    /// Language for a structural pattern: rust, typescript, tsx, javascript, python, go, or swift.
+    /// Defaults to each file's extension.
+    language: Option<String>,
     /// Matches to skip, for paging.
     #[incurs(default = 0)]
     offset: usize,
@@ -111,6 +116,8 @@ fn run_find(options: FindOptions) -> Result<TypedResult<Value>, CmdError> {
         globs: options.glob.unwrap_or_default(),
         literal: options.literal,
         regex: options.regex,
+        pattern: options.pattern,
+        language: options.language,
         offset: options.offset,
         limit: options.limit,
     };

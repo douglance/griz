@@ -76,6 +76,12 @@ pub struct Operation {
     /// Finished by recovery after an interruption.
     #[serde(default)]
     pub recovered: bool,
+    /// Files whose later changes, such as a formatter's, were absorbed.
+    #[serde(default)]
+    pub absorbed: Vec<PathBuf>,
+    /// Why the latest absorb happened.
+    #[serde(default)]
+    pub absorb_purpose: Option<String>,
     /// Creation time in Unix milliseconds.
     pub created_at: i64,
 }
@@ -95,6 +101,8 @@ impl Operation {
             conflicts: Vec::new(),
             reason: None,
             recovered: false,
+            absorbed: Vec::new(),
+            absorb_purpose: None,
             created_at: now_ms(),
         }
     }

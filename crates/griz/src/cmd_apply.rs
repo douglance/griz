@@ -146,3 +146,54 @@ async fn undo(id: String, options: UndoOptions) -> Result<(Value, Outcome), CmdE
     })
     .await
 }
+
+#[derive(Deserialize, incurs::Options)]
+struct AbsorbOptions {
+    /// Absorb only these files. Defaults to every file the operation wrote.
+    paths: Option<Vec<String>>,
+    /// Directory relative paths resolve from. Defaults to the current directory.
+    root: Option<String>,
+    /// Why the later changes are being absorbed, such as a formatter run.
+    purpose: String,
+    /// Key that makes a retry return the original result.
+    idempotency_key: String,
+    /// Response detail: off, error, warn, info, debug, or trace.
+    verbosity: Option<String>,
+}
+
+/// The `absorb` command.
+pub fn absorb_command() -> CommandDef {
+    CommandDef::typed::<OperationArgs, AbsorbOptions, (), Value, _, _>(
+        "absorb",
+        |ctx: TypedContext<OperationArgs, AbsorbOptions, ()>| async move {
+            respond(absorb(ctx.args.operation, ctx.options).await)
+        },
+    )
+    .description("Fold later changes to an operation's files, such as a formatter's, into the operation, so undo still restores the text from before the apply.")
+    .mcp(annotations::records())
+    .done()
+}
+
+async fn absorb(id: String, options: AbsorbOptions) -> Result<(Value, Outcome), CmdError> {
+    let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
+    let root = root(options.root.as_deref())?;
+    let paths = resolve_all(&root, options.paths);
+    let mutation = Mutation {
+        command: "absorb",
+        key: options.idempotency_key,
+        input: json!({ "operation": id, "paths": paths }),
+    };
+    let purpose = options.purpose;
+    with_store(move |store| {
+        run_mutation(
+            store,
+            &mutation,
+            level,
+            |store| Ok(render::absorbed(&store.absorb(&id, &paths, &purpose)?)),
+            |store, id, outcome| {
+                Ok(render::operation(&store.operation(id)?, None).with_outcome(outcome))
+            },
+        )
+    })
+    .await
+}

@@ -2,7 +2,7 @@
 
 use crate::verdict::{Outcome, Rendered, unmet};
 use griz_core::{ChangeKind, Confidence, Problem, ProblemKind};
-use griz_store::{Operation, OperationState, PlanRecord};
+use griz_store::{Absorbed, Operation, OperationState, PlanRecord};
 use serde_json::{Value, json};
 
 /// Expected counts a caller declared for a plan.
@@ -144,4 +144,24 @@ pub fn describe(problem: &Problem, count: usize) -> String {
         problem.op,
         problem.path.display()
     )
+}
+
+/// Renders an absorb: passed when every chosen file could be absorbed.
+#[must_use]
+pub fn absorbed(result: &Absorbed) -> Rendered {
+    let (outcome, reason) = if result.skipped.is_empty() {
+        (Outcome::Passed, None)
+    } else {
+        (
+            Outcome::Failed,
+            Some(format!(
+                "{} file(s) were deleted or are gone and were not absorbed",
+                result.skipped.len()
+            )),
+        )
+    };
+    let mut rendered = operation_with(&result.operation, outcome, reason);
+    rendered.summary["absorbed"] = json!(result.absorbed.len());
+    rendered.summary["skipped"] = json!(result.skipped.len());
+    rendered
 }

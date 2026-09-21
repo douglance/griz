@@ -20,6 +20,7 @@ mod plan;
 mod reindent;
 mod source;
 mod splice;
+mod structural;
 
 pub use diff::{FileDiff, render_diff};
 pub use find::{FindPage, FindQuery, Match, find};

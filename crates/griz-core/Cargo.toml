@@ -10,6 +10,8 @@ keywords = ["codemod", "refactoring", "patch", "edit", "agents"]
 categories = ["development-tools", "text-processing"]
 
 [dependencies]
+ast-grep-core.workspace = true
+ast-grep-language.workspace = true
 diffy.workspace = true
 ignore.workspace = true
 regex.workspace = true

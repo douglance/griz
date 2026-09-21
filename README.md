@@ -53,6 +53,8 @@ the check output stay inside the program.
   of the file, readable with `get`.
 - **Undo never clobbers.** Undo restores only files still exactly as the
   operation left them, and is itself an operation that can be undone.
+- **Formatters do not break undo.** Run a formatter after `apply`, then
+  `absorb` the operation; undo restores the text from before the apply.
 - **Retries are safe.** Mutations take an `idempotency_key`; the same key and
   input replay the original result, and different input with the same key is
   refused.
@@ -62,12 +64,13 @@ the check output stay inside the program.
 | Command | Kind | Does |
 |---|---|---|
 | `read PATH` | read | Numbered lines and fingerprint; `--grep`, `--lines`. |
-| `find` | read | Literal or regex matches with byte ranges, captures, fingerprints; honors `.gitignore`; `--expect-matches`. |
+| `find` | read | Literal, regex, or structural (`--pattern 'foo($A, $$$REST)'`) matches with byte ranges, captures, fingerprints; honors `.gitignore`; `--expect-matches`. |
 | `plan` | records | Operations (`--ops`) or Codex patch text (`--patch`, `@file`) into a plan id. |
 | `select PLAN` | records | A new plan from part of another, by path, edit id, or confidence. |
 | `diff ID` | read | Unified diff of a plan or operation, addressable by `--grep` or `--lines`. |
 | `apply PLAN` | writes | All-or-nothing write; `--min-confidence`, `--on-stale merge`, `--expect-files`. |
 | `undo OP` | writes | Restore an operation's files; `--paths` for a subset. |
+| `absorb OP` | records | Fold a later formatter run into an operation so undo still works. |
 | `log` / `get ID` | read | Operation history; the complete record of a plan or operation. |
 
 Mutations answer `{id, outcome}` with `outcome` one of `passed`, `failed`

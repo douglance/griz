@@ -47,6 +47,19 @@ To keep the parts that passed, undo only the failing files with
 `griz.undo({ operation, paths })`, or build a smaller plan with
 `griz.select({ plan, paths | edits | min_confidence })` and apply that.
 
+## Match by shape
+
+`griz.find({ root, pattern: "foo($A, $$$REST)" })` matches syntax, not text,
+in Rust, TypeScript, JavaScript, Python, Go, and Swift. Each match carries
+`vars` (`{ A, REST }`) and the same `range` and `file_hash` as a text match, so
+the edit that follows is unchanged.
+
+## Formatters
+
+Run the formatter after `apply`, then `griz.absorb({ operation, purpose,
+idempotency_key })`. Undo then restores the text from before the apply instead
+of refusing the reformatted files.
+
 ## Patch text
 
 `griz.plan({ root, patch })` accepts Codex patch text (`*** Begin Patch` …).
