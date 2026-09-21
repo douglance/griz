@@ -2,17 +2,15 @@
 
 use crate::{
     annotations,
-    context::{CmdError, resolve, resolve_op, root, with_store},
+    context::{CmdError, resolve, root, with_store},
+    plan_input::{collect_ops, position_encoding},
     plan_schema::plan_input_schema,
     receipt::{Mutation, run_mutation},
     render::{self, PlanExpect},
     respond,
     verdict::{Outcome, Verbosity},
 };
-use griz_core::{
-    Confidence, DiskSource, Op, PositionEncoding, WorkspaceEdit, build_plan, parse_patch,
-    workspace_edit_to_ops,
-};
+use griz_core::{Confidence, DiskSource, build_plan};
 use griz_store::Selection;
 use incurs::command::{CommandDef, TypedContext};
 use serde::Deserialize;
@@ -25,13 +23,15 @@ struct PlanOptions {
     /// `{op:"replace", path, find:{text, after?, whole_lines?} | range:{start,end}, replace, occurrence?:"unique"|"all"|{nth:N}, expect_hash?}`,
     /// `{op:"insert", path, anchor:{text}, after?:bool, text, expect_hash?}`,
     /// `{op:"create", path, text}`, `{op:"delete", path, expect_hash?}`, `{op:"move", path, to, expect_hash?}`.
+    /// A `@path` string reads the operations from that JSON file.
     ops: Option<Vec<Value>>,
     /// Codex patch text, or `@path` to read the patch from a file.
     patch: Option<String>,
     /// LSP `WorkspaceEdit` as JSON: `changes` (a URI-keyed map of
     /// `TextEdit`s) or `documentChanges` (`TextDocumentEdit`, `CreateFile`,
     /// `RenameFile`, `DeleteFile`). Combines with `ops` and `patch`; applied
-    /// last, after patch hunks and typed operations.
+    /// last, after patch hunks and typed operations. A `@path` string reads
+    /// it from that JSON file.
     workspace_edit: Option<Value>,
     /// How `workspace_edit` positions count into a line: utf-8, utf-16
     /// (default), or utf-32.
@@ -111,89 +111,6 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
         )
     })
     .await
-}
-
-/// Parses `text` as `utf-8`, `utf-16`, or `utf-32`; `None` defaults to
-/// `utf-16`, the LSP default.
-fn position_encoding(text: Option<&str>) -> Result<PositionEncoding, CmdError> {
-    match text {
-        Some(text) => PositionEncoding::parse(text).map_err(CmdError::invalid),
-        None => Ok(PositionEncoding::default()),
-    }
-}
-
-/// Collects operations from `patch`, `ops`, and `workspace_edit`, in that
-/// order: patch hunks first, then typed operations, then a workspace edit's
-/// text edits and resource operations last. All three may be given in one
-/// call; later operations see the effect of earlier ones against the same
-/// file, exactly as several patch hunks for one file already do.
-fn collect_ops(
-    root: &Path,
-    ops: Option<Vec<Value>>,
-    patch: Option<&str>,
-    workspace_edit: Option<Value>,
-    encoding: PositionEncoding,
-) -> Result<Vec<Op>, CmdError> {
-    let mut all = Vec::new();
-    if let Some(patch) = patch {
-        let text = match patch.strip_prefix('@') {
-            Some(file) => std::fs::read_to_string(resolve(root, Path::new(file)))
-                .map_err(|e| CmdError::invalid(format!("reading patch file: {e}")))?,
-            None => patch.to_string(),
-        };
-        let resolver = |path: &str| resolve(root, Path::new(path));
-        all.extend(parse_patch(&text, &resolver).map_err(|e| CmdError::invalid(e.to_string()))?);
-    }
-    for (index, value) in normalize(ops.unwrap_or_default())?.into_iter().enumerate() {
-        let op: Op = serde_json::from_value(value)
-            .map_err(|e| CmdError::invalid(format!("ops[{index}]: {e}")))?;
-        all.push(resolve_op(root, op));
-    }
-    all.extend(collect_workspace_edit_ops(workspace_edit, encoding)?);
-    if all.is_empty() {
-        return Err(CmdError::invalid(
-            "give `ops`, `patch`, or `workspace_edit`",
-        ));
-    }
-    Ok(all)
-}
-
-/// Parses `workspace_edit` (a JSON object, or JSON text for CLI callers) and
-/// converts it to operations against the files it names.
-fn collect_workspace_edit_ops(
-    workspace_edit: Option<Value>,
-    encoding: PositionEncoding,
-) -> Result<Vec<Op>, CmdError> {
-    let Some(value) = workspace_edit else {
-        return Ok(Vec::new());
-    };
-    let value = match value {
-        Value::String(text) => serde_json::from_str(&text)
-            .map_err(|e| CmdError::invalid(format!("workspace_edit must be JSON: {e}")))?,
-        other => other,
-    };
-    let edit: WorkspaceEdit = serde_json::from_value(value)
-        .map_err(|e| CmdError::invalid(format!("workspace_edit: {e}")))?;
-    workspace_edit_to_ops(&edit, encoding, &DiskSource)
-        .map_err(|e| CmdError::invalid(e.to_string()))
-}
-
-/// Accepts operations as structured values (MCP, Code Mode) or as JSON text
-/// from the command line: one JSON array, or repeated JSON objects.
-fn normalize(values: Vec<Value>) -> Result<Vec<Value>, CmdError> {
-    let mut out = Vec::with_capacity(values.len());
-    for value in values {
-        let parsed = match value {
-            Value::String(text) => serde_json::from_str(&text)
-                .map_err(|e| CmdError::invalid(format!("ops must be JSON: {e}")))?,
-            other => other,
-        };
-        match parsed {
-            Value::Array(items) => out.extend(items),
-            item => out.push(item),
-        }
-    }
-    Ok(out)
 }
 
 #[derive(Deserialize, incurs::Args)]

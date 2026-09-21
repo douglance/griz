@@ -1,5 +1,6 @@
 //! The griz binary, driven exactly as an agent or program drives it.
 
+mod at_file;
 mod common;
 mod compose;
 mod conflicts;
