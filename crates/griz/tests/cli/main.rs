@@ -4,5 +4,6 @@ mod common;
 mod compose;
 mod crash;
 mod flow;
+mod mcp;
 mod verbosity;
 mod verdicts;
