@@ -57,6 +57,10 @@ enum Block {
 
 /// Parses patch text into operations, resolving each path with `resolve`.
 ///
+/// Several patch documents may follow one another, each its own
+/// `*** Begin Patch` … `*** End Patch` pair, so a program can concatenate
+/// what it built separately.
+///
 /// # Errors
 /// Returns the first line that does not fit the format.
 pub fn parse_patch(text: &str, resolve: &dyn Fn(&str) -> PathBuf) -> Result<Vec<Op>, PatchError> {
@@ -70,8 +74,11 @@ pub fn parse_patch(text: &str, resolve: &dyn Fn(&str) -> PathBuf) -> Result<Vec<
     let mut blocks = Vec::new();
     while let Some((at, line)) = lines.next() {
         let line = line.trim_end();
-        if line == "*** End Patch" {
+        if line == "*** End Patch" && !another_document(&mut lines)? {
             return Ok(blocks.into_iter().flat_map(to_ops).collect());
+        }
+        if line == "*** End Patch" {
+            continue;
         }
         let block = if let Some(path) = line.strip_prefix("*** Add File: ") {
             Block::Add {
@@ -105,6 +112,28 @@ pub fn parse_patch(text: &str, resolve: &dyn Fn(&str) -> PathBuf) -> Result<Vec<
         text.lines().count(),
         "patch must end with `*** End Patch`",
     ))
+}
+
+/// Whether another patch document follows, consuming its `*** Begin Patch`
+/// and any blank lines before it. Anything else after a document ends is an
+/// error, so stray text is never silently dropped.
+fn another_document<'a, I>(lines: &mut std::iter::Peekable<I>) -> Result<bool, PatchError>
+where
+    I: Iterator<Item = (usize, &'a str)>,
+{
+    while let Some(&(at, line)) = lines.peek() {
+        let line = line.trim();
+        if line.is_empty() {
+            lines.next();
+            continue;
+        }
+        if line == "*** Begin Patch" {
+            lines.next();
+            return Ok(true);
+        }
+        return Err(error(at, "text after `*** End Patch`"));
+    }
+    Ok(false)
 }
 
 fn body_line(

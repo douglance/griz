@@ -18,6 +18,28 @@ fn only_after(plan: &griz_core::Plan) -> Option<&str> {
 }
 
 #[test]
+fn several_patch_documents_in_one_text_are_one_plan() -> TestResult {
+    // Programs concatenate patch documents; each one is its own
+    // `*** Begin Patch` … `*** End Patch` pair.
+    let text = concat!(
+        "*** Begin Patch\n*** Add File: a.rs\n+fn a() {}\n*** End Patch\n",
+        "*** Begin Patch\n*** Add File: b.rs\n+fn b() {}\n*** End Patch\n"
+    );
+    let ops = parse_patch(text, &resolve)?;
+    assert_eq!(ops.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn text_after_a_patch_document_is_an_error() {
+    let text = "*** Begin Patch\n*** Add File: a.rs\n+fn a() {}\n*** End Patch\nstray\n";
+    let Err(error) = parse_patch(text, &resolve) else {
+        panic!("stray text after a document must be an error");
+    };
+    assert!(format!("{error}").contains("End Patch"), "{error}");
+}
+
+#[test]
 fn update_hunk_replaces_context_and_removed_lines() -> TestResult {
     let patch = "*** Begin Patch\n*** Update File: a.rs\n@@\n fn f() {\n-    old();\n+    new();\n }\n*** End Patch\n";
     let ops = parse_patch(patch, &resolve)?;
