@@ -38,8 +38,10 @@ fn find_ranges_stay_valid_after_earlier_edits_change_lengths() {
             path: PathBuf::from("a.rs"),
             find: Some(anchor(&text[range.start..range.end])),
             range: Some(*range),
+            pattern: None,
             replace: "longer".to_string(),
             occurrence: Occurrence::Unique,
+            target: None,
             expect_hash: Some(content_hash(text)),
         })
         .collect();
@@ -55,8 +57,10 @@ fn a_range_that_no_longer_holds_its_text_is_refused() {
         path: PathBuf::from("a.rs"),
         find: Some(anchor("zz")),
         range: Some(ByteRange { start: 0, end: 2 }),
+        pattern: None,
         replace: "x".to_string(),
         occurrence: Occurrence::Unique,
+        target: None,
         expect_hash: None,
     };
     let plan = build_plan(&[op], &source(&[("a.rs", "aa\n")]));
@@ -151,8 +155,10 @@ fn occurrence_all_and_nth_select_matches() {
         path: PathBuf::from("a.rs"),
         find: Some(anchor("x")),
         range: None,
+        pattern: None,
         replace: "y".to_string(),
         occurrence: Occurrence::All,
+        target: None,
         expect_hash: None,
     };
     let plan = build_plan(&[all], &source(&[("a.rs", "x x x\n")]));
@@ -164,8 +170,10 @@ fn occurrence_all_and_nth_select_matches() {
         path: PathBuf::from("a.rs"),
         find: Some(anchor("x")),
         range: None,
+        pattern: None,
         replace: "y".to_string(),
         occurrence: Occurrence::Nth(2),
+        target: None,
         expect_hash: None,
     };
     let plan = build_plan(&[nth], &source(&[("a.rs", "x x x\n")]));

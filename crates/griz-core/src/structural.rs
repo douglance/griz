@@ -10,6 +10,7 @@ use ast_grep_language::{LanguageExt, SupportLang};
 use std::{
     cell::RefCell,
     collections::{BTreeMap, HashMap},
+    ops::Range,
     path::Path,
     str::FromStr,
 };
@@ -72,11 +73,7 @@ impl Shape {
             .ast_grep(text)
             .root()
             .find_all(&pattern)
-            .map(|found| Hit {
-                range: found.range(),
-                captures: Vec::new(),
-                vars: vars(&found, text),
-            })
+            .map(|found| hit(&found, text))
             .collect())
     }
 
@@ -130,23 +127,58 @@ fn enabled_names() -> String {
     }
 }
 
-/// The text each metavariable captured. A run of nodes spans from its first to
-/// its last named node, so separators such as a trailing comma stay out.
-fn vars(found: &NodeMatch<'_, StrDoc<SupportLang>>, text: &str) -> BTreeMap<String, String> {
+/// One metavariable's captured text and byte range.
+struct Capture {
+    text: String,
+    range: Range<usize>,
+}
+
+fn hit(found: &NodeMatch<'_, StrDoc<SupportLang>>, text: &str) -> Hit {
+    let captures = captures(found, text);
+    Hit {
+        range: found.range(),
+        captures: Vec::new(),
+        vars: captures
+            .iter()
+            .map(|(name, capture)| (name.clone(), capture.text.clone()))
+            .collect(),
+        var_ranges: captures
+            .into_iter()
+            .map(|(name, capture)| (name, capture.range))
+            .collect(),
+    }
+}
+
+/// Each metavariable's captured text and range. A run of nodes spans from
+/// its first to its last named node, so separators such as a trailing comma
+/// stay out.
+fn captures(found: &NodeMatch<'_, StrDoc<SupportLang>>, text: &str) -> BTreeMap<String, Capture> {
     let env = found.get_env();
     env.get_matched_variables()
         .filter_map(|var| match var {
             MetaVariable::Capture(name, _) => {
                 let node = env.get_match(&name)?;
-                Some((name, node.text().to_string()))
+                let range = node.range();
+                Some((
+                    name,
+                    Capture {
+                        text: node.text().to_string(),
+                        range,
+                    },
+                ))
             }
             MetaVariable::MultiCapture(name) => {
                 let nodes = env.get_multiple_matches(&name);
                 let named: Vec<_> = nodes.iter().filter(|node| node.is_named()).collect();
                 let (first, last) = (named.first()?, named.last()?);
+                let range = first.range().start..last.range().end;
+                let captured = text[range.clone()].to_string();
                 Some((
                     name,
-                    text[first.range().start..last.range().end].to_string(),
+                    Capture {
+                        text: captured,
+                        range,
+                    },
                 ))
             }
             _ => None,

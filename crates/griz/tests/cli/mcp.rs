@@ -194,6 +194,54 @@ fn plan_publishes_a_typed_ops_schema() -> TestResult {
 }
 
 #[test]
+fn plan_schema_publishes_pattern_fields() -> TestResult {
+    let mut mcp = Mcp::ready()?;
+    let schema = plan_input_schema(&mut mcp)?;
+
+    let op_variants = schema["properties"]["ops"]["items"]["oneOf"]
+        .as_array()
+        .ok_or_else(|| format!("ops.items has no oneOf in {schema}"))?
+        .iter()
+        .find_map(|b| b["oneOf"].as_array())
+        .ok_or_else(|| format!("no Op oneOf branch in {schema}"))?;
+    let replace = op_variants
+        .iter()
+        .find(|variant| variant["properties"]["op"]["const"] == "replace")
+        .ok_or_else(|| format!("no replace variant in {op_variants:?}"))?;
+    for name in ["pattern", "target"] {
+        assert!(
+            replace["properties"][name].is_object(),
+            "missing {name} on replace in {replace}"
+        );
+    }
+
+    assert_every_ref_resolves(&schema);
+    Ok(())
+}
+
+#[test]
+fn plan_schema_publishes_workspace_edit_fields() -> TestResult {
+    let mut mcp = Mcp::ready()?;
+    let schema = plan_input_schema(&mut mcp)?;
+
+    for name in ["workspace_edit", "position_encoding"] {
+        assert!(
+            schema["properties"][name].is_object(),
+            "missing {name} in {schema}"
+        );
+    }
+    assert!(
+        schema["properties"]["workspace_edit"]["properties"]["documentChanges"]["type"]
+            .as_array()
+            .is_some_and(|types| types.iter().any(|t| t == "array")),
+        "{schema}"
+    );
+
+    assert_every_ref_resolves(&schema);
+    Ok(())
+}
+
+#[test]
 fn plan_call_accepts_a_typed_op_object() -> TestResult {
     let mut mcp = Mcp::ready()?;
     let called = mcp.call(
