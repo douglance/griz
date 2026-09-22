@@ -63,6 +63,15 @@ fn text_hits(
     spans: Option<&[Range<usize>]>,
     window: (usize, usize),
 ) -> FileHits {
+    if window.1 == 0 {
+        return FileHits {
+            total: regex
+                .find_iter(text)
+                .filter(|found| within(spans, &found.range()))
+                .count(),
+            hits: Vec::new(),
+        };
+    }
     if regex.captures_len() == 1 {
         let hits = regex
             .find_iter(text)
