@@ -106,6 +106,13 @@ check failure returns the undo verdict too; undo can refuse later file changes.
 | `absorb OP` | records | Fold a later formatter run into an operation so undo still works. |
 | `log` / `get ID` | read | Operation history, narrowed with `--paths`; the complete record of a plan, operation, or `blob_<hash>`. |
 
+`diff` items keep `kind`, `name`, and `change`. Nested definitions also include
+`scope`, an outer-to-inner list such as `["left", "impl A"]`. File-level items
+omit it. Same-named definitions in different scopes remain distinct; overloads
+can produce multiple items with the same kind, name, and scope. Rust callers
+constructing `DiffItem` values must initialize `scope`; use `Vec::new()` at file
+scope.
+
 Mutations answer `{id, outcome}` with `outcome` one of `passed`, `failed`
 (a declared expectation did not hold), or `error` (nothing was done). Add
 `--verbosity warn|info|debug|trace` for more; `trace` returns the full record.

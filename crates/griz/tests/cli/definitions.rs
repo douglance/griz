@@ -28,6 +28,26 @@ fn diff_reports_a_renamed_function_as_removed_and_added() -> TestResult {
 }
 
 #[test]
+fn diff_distinguishes_same_named_methods_by_scope() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write(
+        "a.rs",
+        "impl A { fn run() { first(); } }\nimpl B { fn run() { second(); } }\n",
+    )?;
+    let ops = r#"[{"op":"replace","path":"a.rs","find":"first();","replace":"changed();"}]"#;
+    let plan = griz.id(&["plan", "--ops", ops], "scoped-plan")?;
+    let diff = griz.run(&["diff", &plan])?;
+    assert_eq!(diff.code, Some(0));
+    assert_eq!(
+        diff.json["files"][0]["items"],
+        serde_json::json!([
+            {"kind":"function", "name":"run", "scope":["impl A"], "change":"changed"},
+        ])
+    );
+    Ok(())
+}
+
+#[test]
 fn diff_of_a_non_source_file_has_empty_items() -> TestResult {
     let griz = Griz::new()?;
     griz.write("notes.md", "old text\n")?;

@@ -2,6 +2,7 @@
 
 mod bulk_plan;
 mod common;
+mod definition_scopes;
 mod definitions;
 mod diff_merge;
 mod find;

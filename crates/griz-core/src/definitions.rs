@@ -4,11 +4,13 @@
 //! Fact only. A definition present in both with the same body is left out;
 //! a rename shows up as one removed and one added.
 
-use crate::structural;
-use ast_grep_language::{LanguageExt, SupportLang};
+mod compare;
+mod identity;
+
+use ast_grep_language::SupportLang;
+pub use compare::diff_items;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, path::Path};
 
 /// What happened to one named definition between before and after.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -30,6 +32,9 @@ pub struct DiffItem {
     pub kind: String,
     /// The definition's name.
     pub name: String,
+    /// Enclosing named scopes, outermost first; omitted at file scope.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scope: Vec<String>,
     /// What happened to it.
     pub change: ItemChange,
 }
@@ -188,66 +193,4 @@ fn definitions_for(language: SupportLang) -> &'static [DefKind] {
         SupportLang::Swift => SWIFT,
         _ => &[],
     }
-}
-
-/// Named definitions `before` and `after` disagree on, for `path`'s
-/// language. Empty for a disabled language or with nothing named.
-#[must_use]
-pub fn diff_items(path: &Path, before: Option<&str>, after: Option<&str>) -> Vec<DiffItem> {
-    let Some(language) = structural::enabled_language(path) else {
-        return Vec::new();
-    };
-    let before_items = before
-        .map(|text| collect(language, text))
-        .unwrap_or_default();
-    let after_items = after
-        .map(|text| collect(language, text))
-        .unwrap_or_default();
-    let mut items: Vec<DiffItem> = before_items
-        .iter()
-        .filter_map(|(key, body)| changed_or_removed(key, body, &after_items))
-        .chain(
-            after_items
-                .keys()
-                .filter(|key| !before_items.contains_key(*key))
-                .map(|key| item(key, ItemChange::Added)),
-        )
-        .collect();
-    items.sort_by(|a, b| (&a.kind, &a.name).cmp(&(&b.kind, &b.name)));
-    items
-}
-
-fn changed_or_removed(
-    key: &(String, String),
-    body: &str,
-    after_items: &BTreeMap<(String, String), String>,
-) -> Option<DiffItem> {
-    match after_items.get(key) {
-        None => Some(item(key, ItemChange::Removed)),
-        Some(after_body) if after_body != body => Some(item(key, ItemChange::Changed)),
-        Some(_) => None,
-    }
-}
-
-fn item(key: &(String, String), change: ItemChange) -> DiffItem {
-    DiffItem {
-        kind: key.0.clone(),
-        name: key.1.clone(),
-        change,
-    }
-}
-
-fn collect(language: SupportLang, text: &str) -> BTreeMap<(String, String), String> {
-    let table = definitions_for(language);
-    let tree = language.ast_grep(text);
-    tree.root()
-        .dfs()
-        .filter_map(|node| {
-            let def = table
-                .iter()
-                .find(|def| def.node_kind == node.kind().as_ref())?;
-            let name = node.field(def.name_field)?.text().to_string();
-            Some(((def.label.to_string(), name), node.text().to_string()))
-        })
-        .collect()
 }
