@@ -59,7 +59,8 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   unless a three-way merge is clean.
 - **All or nothing.** Every file is staged before the first rename, and the
   operation is journaled first. A process killed mid-apply is finished by the
-  next griz invocation.
+  next griz invocation. Recovery skips operations that another writer
+  already completed.
 - **Tolerant matches are labeled.** An anchor is matched exactly first, then
   ignoring trailing whitespace, then by relative indentation, then trimmed.
   Only exact matches and find ranges are `machine` confidence; `apply` refuses

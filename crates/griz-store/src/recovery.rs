@@ -16,14 +16,18 @@ use crate::{
 /// Returns an error when the journal cannot be read or updated.
 pub fn recover(store: &Store) -> Result<(), StoreError> {
     for op in store.unfinished_operations()? {
-        recover_one(store, op)?;
+        recover_one(store, &op)?;
     }
     Ok(())
 }
 
-fn recover_one(store: &Store, mut op: Operation) -> Result<(), StoreError> {
+fn recover_one(store: &Store, op: &Operation) -> Result<(), StoreError> {
     let paths: Vec<_> = op.files.iter().map(|file| file.path.clone()).collect();
     let _locks = store.lock_paths(&paths)?;
+    let mut op = store.operation(&op.id)?;
+    if op.state != OperationState::Applying {
+        return Ok(());
+    }
     let mut conflicts = Vec::new();
     for file in &op.files {
         if !roll_forward(store, file)? {

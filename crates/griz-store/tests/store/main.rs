@@ -9,6 +9,7 @@ mod journal_order;
 mod migration;
 mod receipts;
 mod recovery;
+mod recovery_wait;
 mod restore;
 mod restore_boundary;
 mod selection;
