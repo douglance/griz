@@ -82,7 +82,9 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   `expect_syntax: "clean"` to fail a plan that introduces syntax errors.
 - **Formatters do not break undo.** Run a formatter after `apply`, then
   `absorb` the operation; undo restores the text from before the apply.
-  Concurrent absorbs retain one another's selected-file updates.
+  Concurrent absorbs retain one another's selected-file updates. Undo and span
+  restore refresh selected records after waiting for file locks, including
+  absorbs that completed during the wait. A span keeps its original operation IDs.
 - **Selection uses saved inputs.** Selecting part of a plan uses its original
   file snapshots, including files whose operations cancelled out. An older plan
   missing a required snapshot is refused; plan again to use current files.

@@ -86,3 +86,27 @@ pub fn undo_request(operation: &str) -> UndoRequest {
 pub fn exists(path: &Path) -> bool {
     path.exists()
 }
+
+/// Wait until another worker holds the file lock.
+pub fn wait_for_lock(store: &Store, path: &Path) -> TestResult {
+    use griz_core::content_hash;
+    use std::{
+        fs::{File, TryLockError},
+        thread,
+        time::{Duration, Instant},
+    };
+    let hash = content_hash(&path.to_string_lossy());
+    let file = File::options()
+        .write(true)
+        .open(store.home().join("locks").join(format!("{hash}.lock")))?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        match file.try_lock() {
+            Ok(()) => file.unlock()?,
+            Err(TryLockError::WouldBlock) => return Ok(()),
+            Err(error) => return Err(error.into()),
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    Err("worker did not acquire the leading lock".into())
+}

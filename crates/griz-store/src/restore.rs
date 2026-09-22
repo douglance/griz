@@ -37,9 +37,10 @@ impl Store {
             since: since.to_string(),
             operations: span.iter().map(|entry| entry.id.clone()).collect(),
         });
-        let chains = chains_by_path(&span, paths);
-        let locked: Vec<PathBuf> = chains.keys().cloned().collect();
+        let locked: Vec<PathBuf> = chains_by_path(&span, paths).into_keys().collect();
         let _locks = self.lock_paths(&locked)?;
+        let span = self.reload_operations(&span)?;
+        let chains = chains_by_path(&span, paths);
         let mut targets = Vec::new();
         for (path, chain) in &chains {
             let resolved = self.resolve_chain(path, chain, on_stale)?;

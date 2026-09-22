@@ -112,13 +112,18 @@ impl Store {
         if original.state != OperationState::Applied {
             return self.refuse(op, "only an applied operation can be undone");
         }
-        let chosen: Vec<_> = original
+        let locked: Vec<PathBuf> = original
             .files
             .iter()
             .filter(|file| request.paths.is_empty() || request.paths.contains(&file.path))
+            .map(|file| file.path.clone())
             .collect();
-        let locked: Vec<PathBuf> = chosen.iter().map(|file| file.path.clone()).collect();
         let _locks = self.lock_paths(&locked)?;
+        let original = self.operation(&request.operation)?;
+        let chosen = original
+            .files
+            .iter()
+            .filter(|file| request.paths.is_empty() || request.paths.contains(&file.path));
         let mut targets = Vec::new();
         for file in chosen {
             let resolved = self.undo_target(file, request.on_stale)?;

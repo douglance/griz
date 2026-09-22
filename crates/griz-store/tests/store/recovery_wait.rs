@@ -1,14 +1,9 @@
 //! A waiting recovery must not replay an operation another writer completed.
 
-use crate::common::{Fixture, TestResult, request, undo_request};
+use crate::common::{Fixture, TestResult, request, undo_request, wait_for_lock};
 use griz_core::content_hash;
 use griz_store::{Operation, OperationState, Store, UndoRequest};
-use std::{
-    fs::{File, TryLockError},
-    path::Path,
-    thread,
-    time::{Duration, Instant},
-};
+use std::thread;
 
 fn pending(fx: &Fixture) -> Result<Operation, Box<dyn std::error::Error>> {
     let mut ops = Vec::new();
@@ -23,23 +18,6 @@ fn pending(fx: &Fixture) -> Result<Operation, Box<dyn std::error::Error>> {
     applying.state = OperationState::Applying;
     fx.store.save_operation(&applying)?;
     Ok(applied)
-}
-
-fn wait_for_lock(store: &Store, path: &Path) -> TestResult {
-    let hash = content_hash(&path.to_string_lossy());
-    let file = File::options()
-        .write(true)
-        .open(store.home().join("locks").join(format!("{hash}.lock")))?;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        match file.try_lock() {
-            Ok(()) => file.unlock()?,
-            Err(TryLockError::WouldBlock) => return Ok(()),
-            Err(error) => return Err(error.into()),
-        }
-        thread::sleep(Duration::from_millis(1));
-    }
-    Err("recovery did not acquire the leading lock".into())
 }
 
 #[test]

@@ -228,6 +228,32 @@ impl Store {
             .collect()
     }
 
+    /// Reloads exactly the selected records in their original order.
+    pub(crate) fn reload_operations(
+        &self,
+        selected: &[Operation],
+    ) -> Result<Vec<Operation>, StoreError> {
+        let ids: Vec<_> = selected.iter().map(|op| &op.id).collect();
+        let ids = serde_json::to_string(&ids)?;
+        let bodies = self.with(|conn| {
+            crate::bodies(
+                conn,
+                "SELECT operations.body FROM json_each(?1) AS selected
+                 JOIN operations ON operations.id = selected.value ORDER BY selected.key",
+                params![ids],
+            )
+        })?;
+        if bodies.len() != selected.len() {
+            return Err(StoreError::NotFound(
+                "an operation from the selected restore span".into(),
+            ));
+        }
+        bodies
+            .iter()
+            .map(|body| Ok(serde_json::from_str(body)?))
+            .collect()
+    }
+
     /// Applied operations from `since` through the newest, oldest first, for
     /// `restore_since` to fold into one span.
     ///
