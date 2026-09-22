@@ -2,6 +2,7 @@
 
 mod apply;
 mod common;
+mod concurrent_absorb;
 mod history_pagination;
 mod history_throughput;
 mod journal_order;
