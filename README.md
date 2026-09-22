@@ -95,6 +95,10 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   its Unix access and executable bits, including during undo and crash recovery.
   A later permission change is retained when undo replaces that file. Newly
   created files, including restores of deleted files, use creation defaults.
+- **Large write batches stage concurrently.** Batches with at least 32 writes
+  use at most four staging workers. Every file keeps its full sync, and every
+  worker finishes before the operation is journaled. Final renames retain plan
+  order. On staging errors, workers finish and attempt cleanup before returning.
 - **Formatters do not break undo.** Run a formatter after `apply`, then
   `absorb` the operation; undo restores the text from before the apply.
   Concurrent absorbs retain one another's selected-file updates. Undo and span

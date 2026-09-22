@@ -2,7 +2,8 @@
 
 use crate::{
     FileWrite, Operation, OperationState, Store, StoreError,
-    write::{StagedFile, failpoint, failpoint_result, stage},
+    staging::stage_all,
+    write::{StagedFile, failpoint, failpoint_result},
 };
 use std::path::{Path, PathBuf};
 
@@ -90,29 +91,6 @@ fn validate_destinations(targets: &[Target]) -> Result<(), StoreError> {
 fn failpoint_after(index: usize) {
     if index == 0 {
         failpoint("after_first_rename");
-    }
-}
-
-/// Stages every text write, removing what was staged if any fails.
-fn stage_all(targets: &[Target]) -> std::io::Result<Vec<Option<StagedFile>>> {
-    let mut staged = Vec::with_capacity(targets.len());
-    for (index, target) in targets.iter().enumerate() {
-        let temp = target
-            .text
-            .as_deref()
-            .map(|text| stage(&target.path, text))
-            .transpose()?;
-        staged.push(temp);
-        mid_stage_failpoint(index);
-    }
-    Ok(staged)
-}
-
-/// Stops mid-staging when the crash-recovery failpoint is armed, to test that
-/// nothing is journaled about writes that were never fully staged.
-fn mid_stage_failpoint(index: usize) {
-    if index == 0 {
-        failpoint("mid_stage");
     }
 }
 

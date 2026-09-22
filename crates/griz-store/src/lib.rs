@@ -20,6 +20,7 @@ mod receipts;
 mod recovery;
 mod restore;
 mod restore_selection;
+mod staging;
 mod write;
 
 pub use absorb::Absorbed;
