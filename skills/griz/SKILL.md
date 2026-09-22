@@ -20,7 +20,8 @@ Code Mode program so matches, plans, and check output never reach the model.
   writing twice.
 - Declare what you expect: `expect_matches` on `find`, `expect_edits` or
   `expect_files` on `plan`, `expect_files` on `apply`. An unmet count is
-  `failed`, not silently accepted.
+  `failed`, not silently accepted. An `apply` file-count mismatch is checked
+  before source writes, so it needs no undo.
 - Mutations answer `{id, outcome}`. Read more with `verbosity: "trace"` or
   `griz.get(id)`; a missed anchor's nearest real text is in `problems[].nearest`.
 

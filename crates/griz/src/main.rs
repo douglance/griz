@@ -5,6 +5,7 @@
 //! `griz.apply`, and `griz.undo` directly and composes them with other tools.
 
 mod annotations;
+mod apply_expect;
 mod cmd_apply;
 mod cmd_inspect;
 mod cmd_plan;

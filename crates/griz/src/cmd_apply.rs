@@ -30,7 +30,7 @@ struct ApplyOptions {
     purpose: String,
     /// Key that makes a retry return the original operation without writing again.
     idempotency_key: String,
-    /// Number of files the apply must write.
+    /// Number of files the plan must write. A mismatch writes nothing.
     expect_files: Option<usize>,
     /// Response detail: off, error, warn, info, debug, or trace.
     verbosity: Option<String>,
@@ -73,7 +73,7 @@ async fn apply(plan: String, options: ApplyOptions) -> Result<(Value, Outcome), 
             store,
             &mutation,
             level,
-            |store| Ok(render::operation(&store.apply(&request)?, expect_files)),
+            |store| crate::apply_expect::apply(store, &request, expect_files),
             |store, id, outcome| {
                 Ok(render::operation(&store.operation(id)?, expect_files).with_outcome(outcome))
             },

@@ -14,7 +14,7 @@ use serde_json::{Map, Value, json};
 pub enum Outcome {
     /// Done, and every declared expectation held.
     Passed,
-    /// Done, but a declared expectation did not hold.
+    /// A declared expectation did not hold.
     Failed,
     /// Nothing was done: the request could not reach a verdict.
     Error,

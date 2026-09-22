@@ -110,6 +110,7 @@ fn apoc_program_applies_checks_and_rolls_back_through_griz() -> TestResult {
     let log = Command::new(env!("CARGO_BIN_EXE_griz"))
         .args(["log", "--json"])
         .env("GRIZ_HOME", griz_home.path())
+        .env("XDG_DATA_HOME", griz_home.path().join("xdg"))
         .output()?;
     let log: Value = serde_json::from_slice(&log.stdout)?;
     let kinds: Vec<_> = log["operations"]
@@ -122,6 +123,50 @@ fn apoc_program_applies_checks_and_rolls_back_through_griz() -> TestResult {
         kinds,
         [serde_json::json!("undo"), serde_json::json!("apply")],
         "a retried program must not write twice"
+    );
+    Ok(())
+}
+
+const COUNT_PROGRAM: &str = r#"
+const plan = await griz.plan({root: W,
+  ops: [{op: "replace", path: "a.txt", find: "before", replace: "after"}],
+  purpose: "plan", idempotency_key: "plan"});
+if (plan.outcome !== "passed") return plan;
+const args = {plan: plan.id, expect_files: 2, purpose: "apply", idempotency_key: "apply"};
+const first = await griz.apply(args);
+const replay = await griz.apply(args);
+const record = await griz.get({id: first.id});
+const log = await griz.log({});
+return {first, replay, record, operations: log.operations};
+"#;
+
+fn assert_count_refusal(result: &Value) -> TestResult {
+    assert_eq!(result["first"]["outcome"], "failed", "{result}");
+    assert_eq!(result["replay"]["outcome"], "failed");
+    assert_eq!(result["first"]["id"], result["replay"]["id"]);
+    assert_eq!(result["replay"]["replayed"], true);
+    assert_eq!(result["record"]["state"], "failed");
+    assert_eq!(result["record"]["files"], serde_json::json!([]));
+    let operations = result["operations"].as_array().ok_or("no operations")?;
+    assert_eq!(operations.len(), 1, "{result}");
+    assert_eq!(operations[0]["kind"], "apply");
+    Ok(())
+}
+
+#[test]
+#[ignore = "needs apoc on PATH"]
+fn apoc_apply_count_failure_needs_no_rollback() -> TestResult {
+    let work = tempfile::tempdir()?;
+    let griz_home = tempfile::tempdir()?;
+    std::fs::write(work.path().join("a.txt"), "before")?;
+    let apoc = Apoc::new(griz_home.path())?;
+    let program = format!("const W = {:?};\n{COUNT_PROGRAM}", work.path());
+    let state = apoc.run(work.path(), &program, "count-failure")?;
+    assert_eq!(state["status"], "completed", "{state}");
+    assert_count_refusal(&state["result"])?;
+    assert_eq!(
+        std::fs::read_to_string(work.path().join("a.txt"))?,
+        "before"
     );
     Ok(())
 }
