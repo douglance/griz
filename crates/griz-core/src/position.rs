@@ -42,64 +42,78 @@ impl PositionEncoding {
     }
 }
 
-/// Converts `position` in `text` to a byte offset, or `None` when its line
-/// or character falls outside the text.
-#[must_use]
-pub fn to_byte(text: &str, position: Position, encoding: PositionEncoding) -> Option<usize> {
-    let line_start = line_start_byte(text, position.line)?;
-    let line_end = text[line_start..]
-        .find('\n')
-        .map_or(text.len(), |at| line_start + at);
-    let line = &text[line_start..line_end];
-    character_to_byte(line, position.character, encoding).map(|at| line_start + at)
+/// Converts a batch in coordinate order, then returns offsets in caller order.
+pub fn to_bytes(
+    text: &str,
+    positions: &[Position],
+    encoding: PositionEncoding,
+) -> Vec<Option<usize>> {
+    let mut order: Vec<_> = (0..positions.len()).collect();
+    order.sort_unstable_by_key(|&index| (positions[index].line, positions[index].character));
+    let mut offsets = vec![None; positions.len()];
+    let mut cursor = Cursor::new(text);
+    for index in order {
+        offsets[index] = cursor.at(positions[index], encoding);
+    }
+    offsets
 }
 
-fn line_start_byte(text: &str, line: u32) -> Option<usize> {
-    if line == 0 {
-        return Some(0);
-    }
-    let mut seen = 0u32;
-    for (at, byte) in text.bytes().enumerate() {
-        if byte != b'\n' {
-            continue;
-        }
-        seen += 1;
-        if seen == line {
-            return Some(at + 1);
-        }
-    }
-    None
+struct Cursor<'a> {
+    remaining: std::str::Split<'a, char>,
+    text: &'a str,
+    line: usize,
+    start: usize,
+    byte: usize,
+    units: usize,
 }
 
-fn character_to_byte(line: &str, character: u32, encoding: PositionEncoding) -> Option<usize> {
+impl<'a> Cursor<'a> {
+    fn new(text: &'a str) -> Self {
+        let mut remaining = text.split('\n');
+        let text = remaining.next().unwrap_or_default();
+        Self {
+            remaining,
+            text,
+            line: 0,
+            start: 0,
+            byte: 0,
+            units: 0,
+        }
+    }
+
+    fn advance_line(&mut self, line: u32) -> Option<()> {
+        while self.line < line as usize {
+            let next = self.remaining.next()?;
+            self.start += self.text.len() + 1;
+            self.text = next;
+            self.line += 1;
+            self.byte = 0;
+            self.units = 0;
+        }
+        Some(())
+    }
+
+    fn at(&mut self, position: Position, encoding: PositionEncoding) -> Option<usize> {
+        self.advance_line(position.line)?;
+        let target = position.character as usize;
+        if encoding == PositionEncoding::Utf8 {
+            return self
+                .start
+                .checked_add(target)
+                .filter(|_| target <= self.text.len());
+        }
+        while self.units < target {
+            let ch = self.text[self.byte..].chars().next()?;
+            self.units += character_units(ch, encoding);
+            self.byte += ch.len_utf8();
+        }
+        (self.units == target).then_some(self.start + self.byte)
+    }
+}
+
+fn character_units(ch: char, encoding: PositionEncoding) -> usize {
     match encoding {
-        PositionEncoding::Utf8 => utf8_char_byte(line, character),
-        PositionEncoding::Utf32 => nth_char_byte(line, character),
-        PositionEncoding::Utf16 => utf16_char_byte(line, character),
+        PositionEncoding::Utf16 => ch.len_utf16(),
+        PositionEncoding::Utf8 | PositionEncoding::Utf32 => 1,
     }
-}
-
-fn utf8_char_byte(line: &str, character: u32) -> Option<usize> {
-    let at = character as usize;
-    (at <= line.len()).then_some(at)
-}
-
-fn nth_char_byte(line: &str, character: u32) -> Option<usize> {
-    if character as usize == line.chars().count() {
-        return Some(line.len());
-    }
-    line.char_indices()
-        .nth(character as usize)
-        .map(|(at, _)| at)
-}
-
-fn utf16_char_byte(line: &str, character: u32) -> Option<usize> {
-    let mut units = 0u32;
-    for (at, ch) in line.char_indices() {
-        if units == character {
-            return Some(at);
-        }
-        units += u32::try_from(ch.len_utf16()).unwrap_or(1);
-    }
-    (units == character).then_some(line.len())
 }

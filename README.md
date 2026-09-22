@@ -144,4 +144,5 @@ cargo xtask check
 cargo test -p griz compose -- --ignored   # needs apoc on PATH
 cargo test -p griz documented_examples -- --ignored
 cargo test -p griz --release cli_round_trip_measurement -- --ignored --nocapture
+cargo test -p griz-core --release workspace_conversion_measurement -- --ignored --nocapture
 ```

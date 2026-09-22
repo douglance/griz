@@ -84,9 +84,15 @@ fn text_edit_ops(
     let path = path_of(uri)?;
     let text = read(&path, source)?;
     let hash = content_hash(&text);
+    let positions: Vec<_> = edits
+        .iter()
+        .flat_map(|edit| [edit.range.start, edit.range.end])
+        .collect();
+    let offsets = position::to_bytes(&text, &positions, encoding);
     edits
         .iter()
-        .map(|edit| text_edit_op(&path, &text, edit, encoding, &hash))
+        .zip(offsets.chunks_exact(2))
+        .map(|(edit, offsets)| text_edit_op(&path, edit, offsets, &hash))
         .collect()
 }
 
@@ -106,12 +112,11 @@ fn unreadable(path: &std::path::Path, message: String) -> WorkspaceEditError {
 
 fn text_edit_op(
     path: &std::path::Path,
-    text: &str,
     edit: &TextEdit,
-    encoding: PositionEncoding,
+    offsets: &[Option<usize>],
     hash: &str,
 ) -> Result<Op, WorkspaceEditError> {
-    let range = byte_range(path, text, edit.range, encoding)?;
+    let range = byte_range(path, edit.range, offsets)?;
     Ok(Op::Replace {
         path: path.to_path_buf(),
         find: None,
@@ -126,13 +131,11 @@ fn text_edit_op(
 
 fn byte_range(
     path: &std::path::Path,
-    text: &str,
     range: Range,
-    encoding: PositionEncoding,
+    offsets: &[Option<usize>],
 ) -> Result<ByteRange, WorkspaceEditError> {
-    let start =
-        position::to_byte(text, range.start, encoding).ok_or_else(|| bad(path, range.start))?;
-    let end = position::to_byte(text, range.end, encoding).ok_or_else(|| bad(path, range.end))?;
+    let start = offsets[0].ok_or_else(|| bad(path, range.start))?;
+    let end = offsets[1].ok_or_else(|| bad(path, range.end))?;
     Ok(ByteRange { start, end })
 }
 

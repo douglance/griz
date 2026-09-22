@@ -19,3 +19,5 @@ mod splice_mapping;
 mod structural;
 mod syntax;
 mod workspace_edit;
+mod workspace_positions;
+mod workspace_throughput;
