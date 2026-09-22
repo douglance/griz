@@ -57,6 +57,7 @@ fn fixture(work: &Path, count: usize, external_reference: bool) -> Result<String
 
 const OBSERVE: &str = r#"
 const calls = [];
+const check_logs = [];
 let pending = null;
 const observedGriz = {
   find: async args => { calls.push("find"); return await griz.find(args); },
@@ -90,15 +91,21 @@ const observedApoc = {
         executable: "sleep", arg: ["30"], timeout_ms: 30000});
       return pending;
     }
-    return await apoc.execution_command(args);
+    const result = await apoc.execution_command({...args, executable: CARGO,
+      arg: [...args.arg, "--target-dir", `${W}/target/after`]});
+    check_logs.push(await apoc.execution_logs({id: result.id,
+      purpose: "inspect example compile check", grep: ".", max_matches: 40}));
+    return result;
   },
 };
 "#;
 
 fn check_before_rename(apoc: &Apoc, work: &Path) -> TestResult {
     let directory = serde_json::to_string(work)?;
+    let cargo = serde_json::to_string(env!("CARGO"))?;
+    let target = serde_json::to_string(&work.join("target/before"))?;
     let program = format!(
-        "return await apoc.execution_command({{executable:'cargo',arg:['check'],cwd:{directory},purpose:'check original fixture',idempotency_key:'before-rename',expect_exit_code:[0]}});"
+        "return await apoc.execution_command({{executable:{cargo},arg:['check','--target-dir',{target}],cwd:{directory},purpose:'check original fixture',idempotency_key:'before-rename',expect_exit_code:[0]}});"
     );
     let checked = apoc.run(work, &program, "before-rename")?;
     assert_eq!(checked["result"]["outcome"], "passed", "{checked}");
@@ -108,13 +115,14 @@ fn check_before_rename(apoc: &Apoc, work: &Path) -> TestResult {
 fn program(which: &str, scenario: &str, work: &Path) -> Result<String, Box<dyn Error>> {
     let directory = serde_json::to_string(work)?;
     let scenario = serde_json::to_string(scenario)?;
+    let cargo = serde_json::to_string(env!("CARGO"))?;
     let concurrent = serde_json::to_string(CONCURRENT)?;
     let code = example(which)?
         .replace("griz.", "observedGriz.")
         .replace("apoc.", "observedApoc.");
     Ok(format!(
         r#"
-const W = {directory}, S = {scenario}, C = {concurrent};
+const W = {directory}, S = {scenario}, C = {concurrent}, CARGO = {cargo};
 {OBSERVE}
 try {{
   const workflow = await (async () => {{
@@ -122,7 +130,7 @@ try {{
   }})();
   const pending_state = pending
     ? await apoc.execution_get({{id: pending.id, purpose: "verify pending check"}}) : null;
-  return {{workflow, calls, pending_state, log: await griz.log({{}})}};
+  return {{workflow, calls, check_logs, pending_state, log: await griz.log({{}})}};
 }} finally {{
   if (pending) await apoc.execution_cancel({{id: pending.id,
     purpose: "clean up pending example check", idempotency_key: "cancel-pending"}});

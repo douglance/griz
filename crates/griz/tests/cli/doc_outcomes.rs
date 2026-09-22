@@ -11,8 +11,19 @@ fn assert_check(observed: &Observed, check: &str, undo: Option<&str>) {
     assert_eq!(state["status"], "completed", "{state}");
     let workflow = &state["result"]["workflow"];
     assert_eq!(workflow["stage"], "check", "{state}");
-    assert_eq!(workflow["check"]["outcome"], check, "{state}");
+    assert_eq!(
+        workflow["check"]["outcome"], check,
+        "{state}; after={:?}",
+        observed.after
+    );
     assert_eq!(workflow["undo"]["outcome"].as_str(), undo, "{state}");
+    if check == "failed" {
+        let diagnostics = state["result"]["check_logs"].to_string();
+        assert!(
+            diagnostics.contains("E0425") && diagnostics.contains("oldName"),
+            "{diagnostics}"
+        );
+    }
     assert!(
         workflow["operation"]
             .as_str()
