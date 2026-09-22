@@ -7,7 +7,7 @@ use crate::{
 use std::path::Path;
 
 /// Position at the last visited byte, counted from zero.
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Cursor {
     byte: usize,
     line: usize,

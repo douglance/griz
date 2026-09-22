@@ -35,6 +35,7 @@ pub fn build_plan(ops: &[Op], source: &dyn Source) -> Plan {
 pub type OpResult = Result<Vec<Edit>, ProblemKind>;
 
 fn plan_op(overlay: &mut Overlay<'_>, index: usize, op: &Op) -> OpResult {
+    reset_position(overlay, op);
     match op {
         Op::Replace { .. } => plan_replace(overlay, index, op),
         Op::Insert {
@@ -67,6 +68,16 @@ fn plan_op(overlay: &mut Overlay<'_>, index: usize, op: &Op) -> OpResult {
             guard(overlay, path, expect_hash.as_deref())?;
             move_file(overlay, index, path, to)
         }
+    }
+}
+
+fn reset_position(overlay: &mut Overlay<'_>, op: &Op) {
+    if matches!(op, Op::Replace { range: Some(_), .. }) {
+        return;
+    }
+    overlay.reset_position(op.path());
+    if let Op::Move { to, .. } = op {
+        overlay.reset_position(to);
     }
 }
 

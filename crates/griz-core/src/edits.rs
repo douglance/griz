@@ -1,7 +1,7 @@
 //! Text edits inside one overlay slot.
 
 use crate::{
-    Anchor, ByteRange, Edit, Occurrence, ProblemKind, Rung,
+    Anchor, ByteRange, Edit, Occurrence, ProblemKind, Rung, find_position,
     matcher::{Found, Located, line_of, locate},
     overlay::Slot,
     plan::OpResult,
@@ -43,7 +43,7 @@ pub fn replace_range(
     range: ByteRange,
     (expected, replace): (Option<&Anchor>, &str),
 ) -> OpResult {
-    let text = text_of(slot)?;
+    let text = slot.current.as_deref().ok_or(ProblemKind::NotFound)?;
     let mapped = slot.log.map(range).ok_or(ProblemKind::BadRange)?;
     let held = text
         .get(mapped.start..mapped.end)
@@ -51,7 +51,7 @@ pub fn replace_range(
     if expected.is_some_and(|anchor| anchor.text != held) {
         return Err(ProblemKind::BadRange);
     }
-    let line = line_of(text, mapped.start);
+    let (line, _) = find_position::position(&mut slot.position, text, mapped.start);
     slot.current
         .as_mut()
         .ok_or(ProblemKind::NotFound)?

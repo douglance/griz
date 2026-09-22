@@ -14,11 +14,16 @@ struct Splice {
 #[derive(Debug, Clone, Default)]
 pub struct SpliceLog {
     splices: Vec<Splice>,
+    // The first untouched byte in the original text and in the current text.
+    original_tail: usize,
+    current_tail: usize,
 }
 
 impl SpliceLog {
     /// Records that `range` of the current text became `new_len` bytes.
     pub fn record(&mut self, range: ByteRange, new_len: usize) {
+        self.original_tail += range.end.saturating_sub(self.current_tail);
+        self.current_tail = self.current_tail.max(range.end) - (range.end - range.start) + new_len;
         self.splices.push(Splice {
             start: range.start,
             old_len: range.end - range.start,
@@ -30,6 +35,17 @@ impl SpliceLog {
     /// when an earlier splice overlaps it.
     #[must_use]
     pub fn map(&self, range: ByteRange) -> Option<ByteRange> {
+        if range.start > self.original_tail
+            || (range.start == self.original_tail && range.end > range.start)
+        {
+            return Some(ByteRange {
+                start: (range.start - self.original_tail).checked_add(self.current_tail)?,
+                end: range
+                    .end
+                    .checked_sub(self.original_tail)?
+                    .checked_add(self.current_tail)?,
+            });
+        }
         self.splices
             .iter()
             .try_fold(range, |range, splice| map_one(range, *splice))
@@ -42,7 +58,7 @@ fn map_one(range: ByteRange, splice: Splice) -> Option<ByteRange> {
         return Some(range);
     }
     if range.start >= splice_end {
-        let shift = |at: usize| (at + splice.new_len).checked_sub(splice.old_len);
+        let shift = |at: usize| at.checked_sub(splice.old_len)?.checked_add(splice.new_len);
         return Some(ByteRange {
             start: shift(range.start)?,
             end: shift(range.end)?,

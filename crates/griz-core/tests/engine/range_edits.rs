@@ -4,7 +4,7 @@ use crate::common::{anchor, source};
 use griz_core::{ByteRange, Occurrence, Op, ProblemKind, build_plan};
 use std::path::PathBuf;
 
-fn range_edit(range: ByteRange, expected: Option<&str>, with: &str) -> Op {
+pub(super) fn range_edit(range: ByteRange, expected: Option<&str>, with: &str) -> Op {
     Op::Replace {
         path: PathBuf::from("a.txt"),
         find: expected.map(anchor),

@@ -4,7 +4,9 @@
 //! file's text as first read, so the finished plan knows exactly what it was
 //! computed against.
 
-use crate::{ChangeKind, FileChange, Source, content_hash, splice::SpliceLog};
+use crate::{
+    ChangeKind, FileChange, Source, content_hash, find_position::Cursor, splice::SpliceLog,
+};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -21,6 +23,8 @@ pub struct Slot {
     pub current: Option<String>,
     /// Splices applied so far, to map find-result ranges.
     pub log: SpliceLog,
+    /// Position at the last range edit's start in the current text.
+    pub position: Cursor,
 }
 
 /// Every file the plan has read or changed.
@@ -52,12 +56,20 @@ impl<'a> Overlay<'a> {
                     before_hash: text.as_deref().map(content_hash),
                     current: text,
                     log: SpliceLog::default(),
+                    position: Cursor::default(),
                 },
             );
         }
         self.slots
             .get_mut(path)
             .ok_or_else(|| format!("{}: slot vanished", path.display()))
+    }
+
+    /// Discards the cached position before a non-range operation changes this file.
+    pub fn reset_position(&mut self, path: &Path) {
+        if let Some(slot) = self.slots.get_mut(path) {
+            slot.position = Cursor::default();
+        }
     }
 
     /// Every file whose text changed, sorted by path.
