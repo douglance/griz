@@ -2,8 +2,8 @@
 
 use crate::{
     annotations,
-    cmd_plan::{confidence, resolve_all},
-    context::{CmdError, root, with_store},
+    cmd_plan::{confidence, input_paths},
+    context::{CmdError, input_root, resolve_paths, with_store},
     receipt::{Mutation, run_mutation},
     render, respond,
     verdict::{Outcome, Verbosity},
@@ -145,8 +145,8 @@ async fn undo(
     options: UndoOptions,
 ) -> Result<(Value, Outcome), CmdError> {
     let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
-    let root = root(options.root.as_deref())?;
-    let paths = resolve_all(&root, options.paths);
+    let root = input_root(options.root.as_deref())?;
+    let paths = input_paths(&root, options.paths);
     let on_stale = parse_on_stale(options.on_stale.as_deref())?;
     let since = options.since;
     if operation.is_some() == since.is_some() {
@@ -166,6 +166,7 @@ async fn undo(
             &mutation,
             level,
             |store| {
+                let paths = resolve_paths(&paths)?;
                 let op = match (operation.as_deref(), since.as_deref()) {
                     (_, Some(since)) => store.restore_since(since, &paths, on_stale, &purpose)?,
                     (Some(operation), None) => store.undo(&UndoRequest {
@@ -224,8 +225,8 @@ fn replay_absorb(data: Option<&Value>) -> Result<Absorbed, CmdError> {
 
 async fn absorb(id: String, options: AbsorbOptions) -> Result<(Value, Outcome), CmdError> {
     let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
-    let root = root(options.root.as_deref())?;
-    let paths = resolve_all(&root, options.paths);
+    let root = input_root(options.root.as_deref())?;
+    let paths = input_paths(&root, options.paths);
     let mutation = Mutation {
         command: "absorb",
         key: options.idempotency_key,
@@ -237,7 +238,10 @@ async fn absorb(id: String, options: AbsorbOptions) -> Result<(Value, Outcome), 
             store,
             &mutation,
             level,
-            |store| Ok(render::absorbed(&store.absorb(&id, &paths, &purpose)?)),
+            |store| {
+                let paths = resolve_paths(&paths)?;
+                Ok(render::absorbed(&store.absorb(&id, &paths, &purpose)?))
+            },
             |_, _, outcome, data| {
                 let result = replay_absorb(data)?;
                 Ok(render::absorbed(&result).with_outcome(outcome))

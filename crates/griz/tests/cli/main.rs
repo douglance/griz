@@ -16,6 +16,7 @@ mod doc_workflows;
 mod flow;
 mod log_scope;
 mod mcp;
+mod parent_paths;
 mod permissions;
 mod read_address;
 mod replay;

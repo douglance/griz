@@ -2,7 +2,7 @@
 //! operations, and an LSP workspace edit, each also readable from `@path`.
 
 use crate::{
-    context::{CmdError, resolve, resolve_op},
+    context::{CmdError, input_path, resolve, resolve_op},
     render::PlanExpect,
 };
 use griz_core::{
@@ -51,7 +51,11 @@ impl PlanInput {
 
     /// Converts positions only after the request has a new idempotency claim.
     pub fn operations(self) -> Result<Vec<Op>, CmdError> {
-        let mut ops = self.ops;
+        let mut ops = self
+            .ops
+            .into_iter()
+            .map(|op| resolve_op(Path::new(""), op))
+            .collect::<Result<Vec<_>, _>>()?;
         ops.extend(collect_workspace_edit_ops(
             self.workspace_edit,
             self.encoding,
@@ -105,6 +109,20 @@ pub fn position_encoding(text: Option<&str>) -> Result<PositionEncoding, CmdErro
     }
 }
 
+fn input_op(root: &Path, mut op: Op) -> Op {
+    match &mut op {
+        Op::Replace { path, .. }
+        | Op::Insert { path, .. }
+        | Op::Create { path, .. }
+        | Op::Delete { path, .. } => *path = input_path(root, path),
+        Op::Move { path, to, .. } => {
+            *path = input_path(root, path);
+            *to = input_path(root, to);
+        }
+    }
+    op
+}
+
 /// Collects patch hunks first, then typed operations, without reading targets.
 fn collect_ops(
     root: &Path,
@@ -114,7 +132,7 @@ fn collect_ops(
     let mut all = Vec::new();
     if let Some(patch) = patch {
         let text = at_file(root, patch)?.unwrap_or_else(|| patch.to_string());
-        let resolver = |path: &str| resolve(root, Path::new(path));
+        let resolver = |path: &str| input_path(root, Path::new(path));
         all.extend(parse_patch(&text, &resolver).map_err(|e| CmdError::invalid(e.to_string()))?);
     }
     for (index, value) in normalize(root, ops.unwrap_or_default())?
@@ -123,9 +141,9 @@ fn collect_ops(
     {
         let op: Op = serde_json::from_value(value)
             .map_err(|e| CmdError::invalid(format!("ops[{index}]: {e}")))?;
-        all.push(resolve_op(root, op));
+        all.push(op);
     }
-    Ok(all)
+    Ok(all.into_iter().map(|op| input_op(root, op)).collect())
 }
 
 /// The text of a `@path` input, or `None` when the string is the input
@@ -135,7 +153,7 @@ fn at_file(root: &Path, text: &str) -> Result<Option<String>, CmdError> {
     let Some(file) = text.strip_prefix('@') else {
         return Ok(None);
     };
-    std::fs::read_to_string(resolve(root, Path::new(file)))
+    std::fs::read_to_string(resolve(root, Path::new(file))?)
         .map(Some)
         .map_err(|e| CmdError::invalid(format!("reading {file}: {e}")))
 }
@@ -150,8 +168,12 @@ fn collect_workspace_edit_ops(
     };
     let edit: WorkspaceEdit = serde_json::from_value(value)
         .map_err(|e| CmdError::invalid(format!("workspace_edit: {e}")))?;
+    let base = crate::context::root(None)?;
     workspace_edit_to_ops(&edit, encoding, &DiskSource)
-        .map_err(|e| CmdError::invalid(e.to_string()))
+        .map_err(|e| CmdError::invalid(e.to_string()))?
+        .into_iter()
+        .map(|op| resolve_op(&base, op))
+        .collect()
 }
 
 /// Accepts operations as structured values (MCP, Code Mode) or as JSON text

@@ -46,7 +46,7 @@ pub fn read_command() -> CommandDef {
 }
 
 fn read(path: &str, options: ReadOptions) -> Result<TypedResult<Value>, CmdError> {
-    let path = resolve(&root(options.root.as_deref())?, Path::new(path));
+    let path = resolve(&root(options.root.as_deref())?, Path::new(path))?;
     let text = std::fs::read_to_string(&path).map_err(|e| CmdError {
         code: "NOT_FOUND",
         message: format!("{}: {e}", path.display()),
@@ -111,7 +111,7 @@ pub fn find_command() -> CommandDef {
 
 fn run_find(options: FindOptions) -> Result<TypedResult<Value>, CmdError> {
     let root = root(options.root.as_deref())?;
-    let mut paths = resolve_all(&root, options.paths);
+    let mut paths = resolve_all(&root, options.paths)?;
     if paths.is_empty() {
         paths.push(root);
     }

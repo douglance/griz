@@ -48,49 +48,87 @@ impl From<StoreError> for CmdError {
 /// process's current directory.
 ///
 /// # Errors
-/// Returns an error when the current directory is unavailable.
+/// Returns an error when the current directory or a traversed parent is unavailable.
 pub fn root(explicit: Option<&str>) -> Result<PathBuf, CmdError> {
+    normalize(&input_root(explicit)?)
+}
+
+/// Anchors a request root without resolving filesystem-dependent parent paths.
+///
+/// # Errors
+/// Returns an error when the current directory is unavailable.
+pub fn input_root(explicit: Option<&str>) -> Result<PathBuf, CmdError> {
     let cwd = std::env::current_dir().map_err(|e| CmdError::invalid(e.to_string()))?;
     Ok(match explicit {
-        Some(root) => normalize(&cwd.join(root)),
+        Some(root) => input_path(&cwd, Path::new(root)),
         None => cwd,
     })
 }
 
-/// Resolves `path` against `root` and removes `.` and `..` segments.
+/// Anchors a submitted path while retaining parent traversal in its identity.
 #[must_use]
-pub fn resolve(root: &Path, path: &Path) -> PathBuf {
+pub fn input_path(root: &Path, path: &Path) -> PathBuf {
+    root.join(path).components().collect()
+}
+
+/// Resolves already anchored paths when a new mutation executes.
+///
+/// # Errors
+/// Returns an error when a parent traversal cannot resolve its directory.
+pub fn resolve_paths(paths: &[PathBuf]) -> Result<Vec<PathBuf>, CmdError> {
+    paths.iter().map(|path| normalize(path)).collect()
+}
+
+/// Resolves `path` against `root`, following directory links before `..`.
+///
+/// # Errors
+/// Returns an error when a parent traversal cannot resolve its directory.
+pub fn resolve(root: &Path, path: &Path) -> Result<PathBuf, CmdError> {
     normalize(&root.join(path))
 }
 
-fn normalize(path: &Path) -> PathBuf {
+fn normalize(path: &Path) -> Result<PathBuf, CmdError> {
     let mut out = PathBuf::new();
     for part in path.components() {
         match part {
             Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
+            Component::ParentDir => out = parent_directory(&out)?,
             other => out.push(other),
         }
     }
-    out
+    Ok(out)
+}
+
+fn parent_directory(path: &Path) -> Result<PathBuf, CmdError> {
+    let invalid =
+        |error| CmdError::invalid(format!("resolving parent of {}: {error}", path.display()));
+    let mut directory = std::fs::canonicalize(path).map_err(invalid)?;
+    if !std::fs::metadata(&directory).map_err(invalid)?.is_dir() {
+        return Err(CmdError::invalid(format!(
+            "parent traversal requires a directory: {}",
+            path.display()
+        )));
+    }
+    directory.pop();
+    Ok(directory)
 }
 
 /// Resolves every path in an operation against `root`.
-#[must_use]
-pub fn resolve_op(root: &Path, mut op: Op) -> Op {
+///
+/// # Errors
+/// Returns an error when a parent traversal cannot resolve its directory.
+pub fn resolve_op(root: &Path, mut op: Op) -> Result<Op, CmdError> {
     match &mut op {
         Op::Replace { path, .. }
         | Op::Insert { path, .. }
         | Op::Create { path, .. }
-        | Op::Delete { path, .. } => *path = resolve(root, path),
+        | Op::Delete { path, .. } => *path = resolve(root, path)?,
         Op::Move { path, to, .. } => {
-            *path = resolve(root, path);
-            *to = resolve(root, to);
+            *path = resolve(root, path)?;
+            *to = resolve(root, to)?;
         }
     }
-    op
+    Ok(op)
 }
 
 /// Runs blocking store work off the async runtime.

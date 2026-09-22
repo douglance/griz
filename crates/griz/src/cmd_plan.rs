@@ -2,7 +2,7 @@
 
 use crate::{
     annotations,
-    context::{CmdError, resolve, root, with_store},
+    context::{CmdError, input_path, input_root, resolve_paths, with_store},
     plan_input::{PlanInput, expect_clean, position_encoding},
     plan_schema::plan_input_schema,
     receipt::{Mutation, run_mutation},
@@ -68,7 +68,7 @@ pub fn plan_command() -> CommandDef {
 
 async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
     let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
-    let root = root(options.root.as_deref())?;
+    let root = input_root(options.root.as_deref())?;
     let encoding = position_encoding(options.position_encoding.as_deref())?;
     let input = PlanInput::parse(
         &root,
@@ -157,9 +157,9 @@ pub fn select_command() -> CommandDef {
 
 async fn select(id: String, options: SelectOptions) -> Result<(Value, Outcome), CmdError> {
     let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
-    let root = root(options.root.as_deref())?;
+    let root = input_root(options.root.as_deref())?;
     let selection = Selection {
-        paths: resolve_all(&root, options.paths),
+        paths: input_paths(&root, options.paths),
         edits: options.edits.unwrap_or_default(),
         min_confidence: options
             .min_confidence
@@ -179,6 +179,8 @@ async fn select(id: String, options: SelectOptions) -> Result<(Value, Outcome), 
             &mutation,
             level,
             |store| {
+                let mut selection = selection;
+                selection.paths = resolve_paths(&selection.paths)?;
                 Ok(render::plan(
                     &store.select(&id, &selection, &purpose)?,
                     PlanExpect::default(),
@@ -193,11 +195,19 @@ async fn select(id: String, options: SelectOptions) -> Result<(Value, Outcome), 
 }
 
 /// Resolves optional path options against `root`.
-pub fn resolve_all(root: &Path, paths: Option<Vec<String>>) -> Vec<PathBuf> {
+///
+/// # Errors
+/// Returns an error when any path's parent traversal cannot resolve its directory.
+pub fn resolve_all(root: &Path, paths: Option<Vec<String>>) -> Result<Vec<PathBuf>, CmdError> {
+    resolve_paths(&input_paths(root, paths))
+}
+
+/// Anchors path options without looking up directories before a receipt check.
+pub fn input_paths(root: &Path, paths: Option<Vec<String>>) -> Vec<PathBuf> {
     paths
         .unwrap_or_default()
         .iter()
-        .map(|path| resolve(root, Path::new(path)))
+        .map(|path| input_path(root, Path::new(path)))
         .collect()
 }
 

@@ -156,8 +156,8 @@ pub fn log_command() -> CommandDef {
                 paths,
                 root: root_option,
             } = ctx.options;
-            let under = match root(root_option.as_deref()) {
-                Ok(root) => resolve_all(&root, paths),
+            let under = match root(root_option.as_deref()).and_then(|root| resolve_all(&root, paths)) {
+                Ok(paths) => paths,
                 Err(error) => return CmdError::result(error),
             };
             let result =

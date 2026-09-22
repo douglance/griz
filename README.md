@@ -80,6 +80,10 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   the writes it builds on, regardless of when its ID was created.
 - **Parse facts.** A plan reports whether each file still parses. Request
   `expect_syntax: "clean"` to fail a plan that introduces syntax errors.
+- **Parent paths follow the filesystem.** Before traversing `..`, griz resolves
+  the preceding directory, including directory symlinks. Missing or non-directory
+  prefixes are rejected instead of silently choosing a different file. Mutation
+  retries consult their original receipt before resolving target paths again.
 - **Replacement permissions stay intact.** Replacing an existing file retains
   its Unix access and executable bits, including during undo and crash recovery.
   A later permission change is retained when undo replaces that file. Newly
@@ -135,6 +139,10 @@ WorkspaceEdit plan retries compare the parsed edit JSON and position encoding
 and unchanged for a retry. Older versions identified these requests by converted
 operations: their WorkspaceEdit keys now return `IDEMPOTENCY_CONFLICT`, while
 saved plan IDs remain usable. New planning requests need new keys.
+
+Parent-traversal paths retain `..` in mutation request identities. Older keys
+whose recorded inputs removed those components can return `IDEMPOTENCY_CONFLICT`;
+their saved plan and operation IDs remain available. Use a new key for a new request.
 
 Operations, applied in order:
 
