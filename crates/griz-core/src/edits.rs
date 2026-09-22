@@ -52,8 +52,10 @@ pub fn replace_range(
         return Err(ProblemKind::BadRange);
     }
     let line = line_of(text, mapped.start);
-    let next = splice(text, mapped, replace);
-    slot.current = Some(next);
+    slot.current
+        .as_mut()
+        .ok_or(ProblemKind::NotFound)?
+        .replace_range(mapped.start..mapped.end, replace);
     slot.log.record(mapped, replace.len());
     Ok(vec![edit(
         format!("e{index}"),

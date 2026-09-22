@@ -1,8 +1,8 @@
 //! Turns operations into a [`Plan`] without writing anything.
 
 use crate::{
-    Edit, Op, Plan, Problem, ProblemKind, Rung, Source, content_hash, edits, overlay::Overlay,
-    pattern_edit, syntax,
+    Edit, Op, Plan, Problem, ProblemKind, Rung, Source, edits, overlay::Overlay, pattern_edit,
+    syntax,
 };
 use std::path::Path;
 
@@ -131,13 +131,13 @@ fn guard(
         return Ok(());
     };
     let slot = overlay.slot(path).map_err(invalid)?;
-    let actual = slot.before.as_deref().map(content_hash);
+    let actual = &slot.before_hash;
     if actual.as_deref() == Some(expected) {
         return Ok(());
     }
     Err(ProblemKind::Stale {
         expected: expected.to_string(),
-        actual,
+        actual: actual.clone(),
     })
 }
 

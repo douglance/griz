@@ -15,6 +15,8 @@ use std::{
 pub struct Slot {
     /// Text as first read; `None` when the file did not exist.
     pub before: Option<String>,
+    /// Fingerprint of the text as first read, shared by every operation's guard.
+    pub before_hash: Option<String>,
     /// Text after every operation so far; `None` when absent.
     pub current: Option<String>,
     /// Splices applied so far, to map find-result ranges.
@@ -47,6 +49,7 @@ impl<'a> Overlay<'a> {
                 path.to_path_buf(),
                 Slot {
                     before: text.clone(),
+                    before_hash: text.as_deref().map(content_hash),
                     current: text,
                     log: SpliceLog::default(),
                 },
@@ -77,7 +80,7 @@ fn change(path: PathBuf, slot: Slot) -> FileChange {
     FileChange {
         path,
         kind,
-        before_hash: slot.before.as_deref().map(content_hash),
+        before_hash: slot.before_hash,
         after_hash: slot.current.as_deref().map(content_hash),
         before: slot.before,
         after: slot.current,
