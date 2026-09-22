@@ -9,6 +9,7 @@ mod diff_merge;
 mod find;
 mod find_paging;
 mod find_positions;
+mod find_streaming;
 mod hash_guards;
 mod ladder;
 mod overwrite;

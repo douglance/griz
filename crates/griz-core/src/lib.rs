@@ -11,6 +11,7 @@ mod definitions;
 mod diff;
 mod edits;
 mod find;
+mod find_hits;
 mod find_position;
 mod hash;
 mod matcher;
