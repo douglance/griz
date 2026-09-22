@@ -7,7 +7,10 @@
 
 use crate::{FileWrite, Operation, OperationState, Store, StoreError, execute::read_current};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 /// What an absorb did.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,24 +55,14 @@ impl Store {
             .iter()
             .map(|file| file.path.clone())
             .collect();
-        if let Some(unknown) = paths.iter().find(|path| !written.contains(path)) {
-            return Err(StoreError::Invalid(format!(
-                "absorb: `{}` is not a file this operation wrote",
-                unknown.display()
-            )));
-        }
+        validate_paths(paths, &written)?;
         let _locks = self.lock_paths(&written)?;
         operation = self.operation(id)?;
-        let chosen: Vec<PathBuf> = operation
-            .files
-            .iter()
-            .map(|file| file.path.clone())
-            .filter(|path| paths.is_empty() || paths.contains(path))
-            .collect();
+        let chosen: BTreeSet<&Path> = paths.iter().map(PathBuf::as_path).collect();
         let results: Vec<(PathBuf, FileResult)> = operation
             .files
             .iter_mut()
-            .filter(|file| chosen.contains(&file.path))
+            .filter(|file| chosen.is_empty() || chosen.contains(file.path.as_path()))
             .map(|file| Ok((file.path.clone(), self.absorb_file(file)?)))
             .collect::<Result<_, StoreError>>()?;
         let pick = |wanted: FileResult| -> Vec<PathBuf> {
@@ -102,13 +95,30 @@ impl Store {
     }
 }
 
+fn validate_paths(paths: &[PathBuf], written: &[PathBuf]) -> Result<(), StoreError> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let known: BTreeSet<&Path> = written.iter().map(PathBuf::as_path).collect();
+    if let Some(unknown) = paths.iter().find(|path| !known.contains(path.as_path())) {
+        return Err(StoreError::Invalid(format!(
+            "absorb: `{}` is not a file this operation wrote",
+            unknown.display()
+        )));
+    }
+    Ok(())
+}
+
 fn record(operation: &mut Operation, absorbed: &[PathBuf], purpose: &str) {
-    for path in absorbed {
-        if !operation.absorbed.contains(path) {
-            operation.absorbed.push(path.clone());
-        }
+    if absorbed.is_empty() {
+        return;
     }
-    if !absorbed.is_empty() {
-        operation.absorb_purpose = Some(purpose.to_string());
-    }
+    let mut known: BTreeSet<&Path> = operation.absorbed.iter().map(PathBuf::as_path).collect();
+    let added: Vec<_> = absorbed
+        .iter()
+        .filter(|path| known.insert(path.as_path()))
+        .cloned()
+        .collect();
+    operation.absorbed.extend(added);
+    operation.absorb_purpose = Some(purpose.to_string());
 }

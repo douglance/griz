@@ -1,5 +1,6 @@
 //! Behavior of the durable store: apply, undo, receipts, and recovery.
 
+mod absorb_selection;
 mod apply;
 mod blob_ids;
 mod common;
