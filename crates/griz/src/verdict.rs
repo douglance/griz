@@ -91,10 +91,11 @@ impl Rendered {
     /// The response at `level`.
     #[must_use]
     pub fn at(&self, level: Verbosity, replayed: bool) -> Value {
-        if level == Verbosity::Trace {
-            return self.traced(replayed);
-        }
-        let mut out = Map::new();
+        let mut out = if level == Verbosity::Trace {
+            self.record.as_object().cloned().unwrap_or_default()
+        } else {
+            Map::new()
+        };
         out.insert("id".into(), json!(self.id));
         out.insert("outcome".into(), json!(self.outcome));
         insert_replayed(&mut out, replayed);
@@ -112,15 +113,6 @@ impl Rendered {
             out.insert("detail".into(), self.detail.clone());
         }
         Value::Object(out)
-    }
-
-    fn traced(&self, replayed: bool) -> Value {
-        let mut record = self.record.clone();
-        if let Value::Object(map) = &mut record {
-            map.insert("outcome".into(), json!(self.outcome));
-            insert_replayed(map, replayed);
-        }
-        record
     }
 }
 

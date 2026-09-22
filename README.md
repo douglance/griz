@@ -115,7 +115,9 @@ scope.
 
 Mutations answer `{id, outcome}` with `outcome` one of `passed`, `failed`
 (a declared expectation did not hold), or `error` (nothing was done). Add
-`--verbosity warn|info|debug|trace` for more; `trace` returns the full record.
+`--verbosity warn|info|debug|trace` for more. Each level retains the fields and
+values below it; `trace` also includes the full record without dropping the
+reason, summary, or detail.
 A verdict other than `passed` exits nonzero.
 
 Absorb retries retain the original call's counts, skipped-file reason, and
