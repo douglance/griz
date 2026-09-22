@@ -89,10 +89,8 @@ fn collect(language: SupportLang, text: &str) -> Definitions<'_> {
     let tree = language.ast_grep(text);
     let mut definitions = Definitions::new();
     for node in tree.root().dfs() {
-        let Some(def) = table
-            .iter()
-            .find(|def| def.node_kind == node.kind().as_ref())
-        else {
+        let kind = node.kind();
+        let Some(def) = table.iter().find(|def| def.node_kind == kind.as_ref()) else {
             continue;
         };
         let Some(name) = node.field(def.name_field) else {

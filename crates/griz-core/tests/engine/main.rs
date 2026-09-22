@@ -3,6 +3,7 @@
 mod bulk_plan;
 mod common;
 mod definition_scopes;
+mod definition_throughput;
 mod definitions;
 mod diff_merge;
 mod find;
