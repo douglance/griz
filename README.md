@@ -78,6 +78,9 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   `expect_syntax: "clean"` to fail a plan that introduces syntax errors.
 - **Formatters do not break undo.** Run a formatter after `apply`, then
   `absorb` the operation; undo restores the text from before the apply.
+- **Selection uses saved inputs.** Selecting part of a plan uses its original
+  file snapshots, including files whose operations cancelled out. An older plan
+  missing a required snapshot is refused; plan again to use current files.
 - **Retries are safe.** Mutations take an `idempotency_key`; the same key and
   input replay the original result, and different input with the same key is
   refused.

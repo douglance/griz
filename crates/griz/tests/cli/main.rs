@@ -16,6 +16,7 @@ mod log_scope;
 mod mcp;
 mod replay;
 mod scope;
+mod selection_snapshot;
 mod syntax;
 mod throughput;
 mod verbosity;

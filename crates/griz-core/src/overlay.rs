@@ -5,7 +5,7 @@
 //! computed against.
 
 use crate::{
-    ChangeKind, FileChange, Source, content_hash, find_position::Cursor, splice::SpliceLog,
+    ChangeKind, FileChange, Plan, Source, content_hash, find_position::Cursor, splice::SpliceLog,
 };
 use std::{
     collections::BTreeMap,
@@ -72,14 +72,19 @@ impl<'a> Overlay<'a> {
         }
     }
 
-    /// Every file whose text changed, sorted by path.
-    #[must_use]
-    pub fn into_changes(self) -> Vec<FileChange> {
-        self.slots
-            .into_iter()
-            .filter(|(_, slot)| slot.before != slot.current)
-            .map(|(path, slot)| change(path, slot))
-            .collect()
+    /// Records changed files and the original inputs of unchanged files.
+    pub fn finish(self, plan: &mut Plan) {
+        for (path, slot) in self.slots {
+            finish_slot(plan, path, slot);
+        }
+    }
+}
+
+fn finish_slot(plan: &mut Plan, path: PathBuf, slot: Slot) {
+    if slot.before == slot.current {
+        plan.unchanged_inputs.insert(path, slot.before);
+    } else {
+        plan.files.push(change(path, slot));
     }
 }
 

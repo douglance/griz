@@ -5,4 +5,5 @@ mod common;
 mod receipts;
 mod recovery;
 mod restore;
+mod selection;
 mod undo;

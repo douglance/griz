@@ -3,7 +3,7 @@
 
 use crate::{Store, StoreError, new_id, now_ms};
 use griz_core::{
-    ChangeKind, Confidence, DiskSource, Edit, FileChange, Op, Plan, Problem, Source, build_plan,
+    ChangeKind, Confidence, Edit, FileChange, MapSource, Op, Plan, Problem, build_plan,
 };
 use rusqlite::params;
 use schemars::JsonSchema;
@@ -43,6 +43,9 @@ pub struct PlanRecord {
     pub problems: Vec<Problem>,
     /// Changed files.
     pub files: Vec<FileRecord>,
+    /// Fingerprints of unchanged input files; `None` records an absent file.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unchanged_inputs: BTreeMap<PathBuf, Option<String>>,
     /// Lowest edit confidence.
     pub confidence: Confidence,
     /// Creation time in Unix milliseconds.
@@ -88,15 +91,26 @@ impl Store {
             .iter()
             .map(|file| self.file_record(file))
             .collect::<Result<_, _>>()?;
+        let confidence = plan.confidence();
+        let put_blob = |text: &str| self.put_blob(text);
+        let unchanged_inputs = plan
+            .unchanged_inputs
+            .into_iter()
+            .map(|(path, text)| {
+                let hash = text.as_deref().map(put_blob).transpose()?;
+                Ok((path, hash))
+            })
+            .collect::<Result<_, StoreError>>()?;
         let record = PlanRecord {
             id: new_id("plan"),
             purpose: purpose.to_string(),
             selected_from,
-            confidence: plan.confidence(),
+            confidence,
             ops,
             edits: plan.edits,
             problems: plan.problems,
             files,
+            unchanged_inputs,
             created_at: now_ms(),
         };
         self.insert_plan(&record)?;
@@ -161,6 +175,18 @@ impl Store {
             .collect()
     }
 
+    fn plan_source(&self, record: &PlanRecord) -> Result<MapSource, StoreError> {
+        let mut files = record
+            .unchanged_inputs
+            .iter()
+            .map(|(path, hash)| Ok((path.clone(), self.text(hash.as_deref())?)))
+            .collect::<Result<BTreeMap<_, _>, StoreError>>()?;
+        for file in &record.files {
+            files.insert(file.path.clone(), self.text(file.before_hash.as_deref())?);
+        }
+        Ok(MapSource::new(files))
+    }
+
     fn text(&self, hash: Option<&str>) -> Result<Option<String>, StoreError> {
         hash.map(|hash| self.get_blob(hash)).transpose()
     }
@@ -184,13 +210,7 @@ impl Store {
             .filter(|(index, op)| keeps(&original, selection, *index, op))
             .map(|(_, op)| op.clone())
             .collect();
-        let recorded = self.plan_changes(&original)?;
-        let source = Recorded {
-            files: recorded
-                .into_iter()
-                .map(|change| (change.path, change.before))
-                .collect(),
-        };
+        let source = self.plan_source(&original)?;
         let plan = build_plan(&ops, &source);
         self.store_plan(purpose, ops, plan, Some(original.id))
     }
@@ -212,19 +232,4 @@ fn keeps(plan: &PlanRecord, selection: &Selection, index: usize, op: &Op) -> boo
         .min_confidence
         .is_none_or(|min| edits.iter().all(|edit| edit.confidence >= min));
     by_path && by_edit && by_confidence
-}
-
-/// The texts a plan was computed from, falling back to disk for files the
-/// plan read but did not change.
-struct Recorded {
-    files: BTreeMap<PathBuf, Option<String>>,
-}
-
-impl Source for Recorded {
-    fn read(&self, path: &Path) -> Result<Option<String>, String> {
-        match self.files.get(path) {
-            Some(text) => Ok(text.clone()),
-            None => DiskSource.read(path),
-        }
-    }
 }

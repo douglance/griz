@@ -232,6 +232,9 @@ pub struct FileChange {
 pub struct Plan {
     /// Every changed file, sorted by path.
     pub files: Vec<FileChange>,
+    /// Original text of read files whose final state is unchanged; `None` records absence.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unchanged_inputs: BTreeMap<PathBuf, Option<String>>,
     /// Every edit, in operation order.
     pub edits: Vec<Edit>,
     /// Every operation that could not be planned. A plan with problems must
