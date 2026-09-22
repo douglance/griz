@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "griz"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "griz-core",
  "griz-store",
@@ -949,7 +949,7 @@ dependencies = [
 
 [[package]]
 name = "griz-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ast-grep-core",
  "ast-grep-language",
@@ -967,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "griz-store"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "dirs",
  "griz-core",
@@ -1263,9 +1263,9 @@ dependencies = [
 
 [[package]]
 name = "incurs"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b4099613aa0fac0dc91d097c753d93c0424f1fb7915aa2d716608c2477b669b"
+checksum = "7d80595b067a4d843d7917cdd89b3d9e70094b73930a1da53810acced1e0f9e3"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -3272,7 +3272,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xtask"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "proc-macro2",
