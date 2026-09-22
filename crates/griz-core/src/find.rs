@@ -221,16 +221,18 @@ fn collect_file(
         return;
     }
     page.files += 1;
+    let skip = query.offset.saturating_sub(page.total);
+    page.total += hits.len();
+    let remaining = query.limit - page.matches.len();
+    if skip >= hits.len() || remaining == 0 {
+        return;
+    }
     let hash = content_hash(text);
     let mut cursor = Cursor::default();
-    for hit in hits {
-        let keep = page.total >= query.offset && page.matches.len() < query.limit;
-        page.total += 1;
-        if keep {
-            let position = find_position::position(&mut cursor, text, hit.range.start);
-            page.matches
-                .push(to_match(path, text, hit, &hash, position));
-        }
+    for hit in hits.into_iter().skip(skip).take(remaining) {
+        let position = find_position::position(&mut cursor, text, hit.range.start);
+        page.matches
+            .push(to_match(path, text, hit, &hash, position));
     }
 }
 

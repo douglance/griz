@@ -7,6 +7,7 @@ mod definition_throughput;
 mod definitions;
 mod diff_merge;
 mod find;
+mod find_paging;
 mod find_positions;
 mod hash_guards;
 mod ladder;
