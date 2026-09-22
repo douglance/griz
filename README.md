@@ -84,6 +84,13 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   the preceding directory, including directory symlinks. Missing or non-directory
   prefixes are rejected instead of silently choosing a different file. Mutation
   retries consult their original receipt before resolving target paths again.
+- **Directory aliases compose.** New plans resolve existing parent directories,
+  so a directory symlink and its target share one planned file and one lock.
+  Retargeting the link later does not redirect a new saved plan. Missing directory
+  suffixes stay creatable; dangling directory links are rejected. Older saved
+  paths and their original filters remain usable, but a write containing multiple
+  paths to the same destination is refused before staging. This identifies parent
+  directories; final file-name case aliases and file symlinks are separate.
 - **Replacement permissions stay intact.** Replacing an existing file retains
   its Unix access and executable bits, including during undo and crash recovery.
   A later permission change is retained when undo replaces that file. Newly

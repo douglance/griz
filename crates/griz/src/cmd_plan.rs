@@ -180,7 +180,7 @@ async fn select(id: String, options: SelectOptions) -> Result<(Value, Outcome), 
             level,
             |store| {
                 let mut selection = selection;
-                selection.paths = resolve_paths(&selection.paths)?;
+                selection.paths = crate::path_filters::resolve(&selection.paths)?;
                 Ok(render::plan(
                     &store.select(&id, &selection, &purpose)?,
                     PlanExpect::default(),

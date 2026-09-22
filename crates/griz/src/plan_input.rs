@@ -2,7 +2,7 @@
 //! operations, and an LSP workspace edit, each also readable from `@path`.
 
 use crate::{
-    context::{CmdError, input_path, resolve, resolve_op},
+    context::{CmdError, input_path, resolve, resolve_ops},
     render::PlanExpect,
 };
 use griz_core::{
@@ -51,11 +51,7 @@ impl PlanInput {
 
     /// Converts positions only after the request has a new idempotency claim.
     pub fn operations(self) -> Result<Vec<Op>, CmdError> {
-        let mut ops = self
-            .ops
-            .into_iter()
-            .map(|op| resolve_op(Path::new(""), op))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut ops = resolve_ops(Path::new(""), self.ops)?;
         ops.extend(collect_workspace_edit_ops(
             self.workspace_edit,
             self.encoding,
@@ -169,11 +165,9 @@ fn collect_workspace_edit_ops(
     let edit: WorkspaceEdit = serde_json::from_value(value)
         .map_err(|e| CmdError::invalid(format!("workspace_edit: {e}")))?;
     let base = crate::context::root(None)?;
-    workspace_edit_to_ops(&edit, encoding, &DiskSource)
-        .map_err(|e| CmdError::invalid(e.to_string()))?
-        .into_iter()
-        .map(|op| resolve_op(&base, op))
-        .collect()
+    let ops = workspace_edit_to_ops(&edit, encoding, &DiskSource)
+        .map_err(|e| CmdError::invalid(e.to_string()))?;
+    resolve_ops(&base, ops)
 }
 
 /// Accepts operations as structured values (MCP, Code Mode) or as JSON text

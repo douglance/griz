@@ -30,6 +30,7 @@ impl Store {
     /// Returns an error when staging or renaming fails. After a rename
     /// failure the journal keeps the operation `applying` for recovery.
     pub fn execute(&self, op: &mut Operation, targets: &[Target]) -> Result<(), StoreError> {
+        validate_destinations(targets)?;
         op.files = targets
             .iter()
             .map(|target| self.file_write(target))
@@ -70,6 +71,19 @@ impl Store {
             merged: target.merged,
         })
     }
+}
+
+fn validate_destinations(targets: &[Target]) -> Result<(), StoreError> {
+    let mut paths = std::collections::BTreeSet::new();
+    let mut resolver = crate::PathResolver::default();
+    for target in targets {
+        if !paths.insert(resolver.resolve(&target.path)?) {
+            return Err(StoreError::Invalid(
+                "multiple planned paths refer to the same destination; plan again".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Stops after the first rename when the crash-recovery failpoint is armed.

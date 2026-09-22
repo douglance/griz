@@ -2,7 +2,7 @@
 //! resolve from, the store, and error shaping.
 
 use griz_core::Op;
-use griz_store::{Store, StoreError};
+use griz_store::{PathResolver, Store, StoreError};
 use incurs::command::TypedResult;
 use std::path::{Component, Path, PathBuf};
 
@@ -50,7 +50,8 @@ impl From<StoreError> for CmdError {
 /// # Errors
 /// Returns an error when the current directory or a traversed parent is unavailable.
 pub fn root(explicit: Option<&str>) -> Result<PathBuf, CmdError> {
-    normalize(&input_root(explicit)?)
+    griz_store::directory_path(&normalize(&input_root(explicit)?)?)
+        .map_err(|error| CmdError::invalid(error.to_string()))
 }
 
 /// Anchors a request root without resolving filesystem-dependent parent paths.
@@ -76,7 +77,11 @@ pub fn input_path(root: &Path, path: &Path) -> PathBuf {
 /// # Errors
 /// Returns an error when a parent traversal cannot resolve its directory.
 pub fn resolve_paths(paths: &[PathBuf]) -> Result<Vec<PathBuf>, CmdError> {
-    paths.iter().map(|path| normalize(path)).collect()
+    let mut resolver = PathResolver::default();
+    paths
+        .iter()
+        .map(|path| normalize_with(&mut resolver, path))
+        .collect()
 }
 
 /// Resolves `path` against `root`, following directory links before `..`.
@@ -88,6 +93,10 @@ pub fn resolve(root: &Path, path: &Path) -> Result<PathBuf, CmdError> {
 }
 
 fn normalize(path: &Path) -> Result<PathBuf, CmdError> {
+    normalize_with(&mut PathResolver::default(), path)
+}
+
+fn normalize_with(resolver: &mut PathResolver, path: &Path) -> Result<PathBuf, CmdError> {
     let mut out = PathBuf::new();
     for part in path.components() {
         match part {
@@ -96,7 +105,9 @@ fn normalize(path: &Path) -> Result<PathBuf, CmdError> {
             other => out.push(other),
         }
     }
-    Ok(out)
+    resolver
+        .resolve(&out)
+        .map_err(|error| CmdError::invalid(error.to_string()))
 }
 
 fn parent_directory(path: &Path) -> Result<PathBuf, CmdError> {
@@ -117,15 +128,22 @@ fn parent_directory(path: &Path) -> Result<PathBuf, CmdError> {
 ///
 /// # Errors
 /// Returns an error when a parent traversal cannot resolve its directory.
-pub fn resolve_op(root: &Path, mut op: Op) -> Result<Op, CmdError> {
+pub fn resolve_ops(root: &Path, ops: Vec<Op>) -> Result<Vec<Op>, CmdError> {
+    let mut resolver = PathResolver::default();
+    ops.into_iter()
+        .map(|op| resolve_op(&mut resolver, root, op))
+        .collect()
+}
+
+fn resolve_op(resolver: &mut PathResolver, root: &Path, mut op: Op) -> Result<Op, CmdError> {
     match &mut op {
         Op::Replace { path, .. }
         | Op::Insert { path, .. }
         | Op::Create { path, .. }
-        | Op::Delete { path, .. } => *path = resolve(root, path)?,
+        | Op::Delete { path, .. } => *path = normalize_with(resolver, &root.join(&*path))?,
         Op::Move { path, to, .. } => {
-            *path = resolve(root, path)?;
-            *to = resolve(root, to)?;
+            *path = normalize_with(resolver, &root.join(&*path))?;
+            *to = normalize_with(resolver, &root.join(&*to))?;
         }
     }
     Ok(op)

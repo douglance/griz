@@ -17,10 +17,15 @@ impl Store {
     /// # Errors
     /// Returns an error when a lock file cannot be opened or locked.
     pub fn lock_paths(&self, paths: &[PathBuf]) -> Result<PathLocks, StoreError> {
+        let mut resolver = crate::PathResolver::default();
         let mut keys: Vec<String> = paths
             .iter()
-            .map(|path| content_hash(&path.to_string_lossy()))
-            .collect();
+            .map(|path| {
+                resolver
+                    .resolve(path)
+                    .map(|path| content_hash(&path.to_string_lossy()))
+            })
+            .collect::<Result<_, _>>()?;
         keys.sort();
         keys.dedup();
         let dir = self.home().join("locks");

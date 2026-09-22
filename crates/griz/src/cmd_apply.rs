@@ -3,7 +3,7 @@
 use crate::{
     annotations,
     cmd_plan::{confidence, input_paths},
-    context::{CmdError, input_root, resolve_paths, with_store},
+    context::{CmdError, input_root, with_store},
     receipt::{Mutation, run_mutation},
     render, respond,
     verdict::{Outcome, Verbosity},
@@ -166,7 +166,7 @@ async fn undo(
             &mutation,
             level,
             |store| {
-                let paths = resolve_paths(&paths)?;
+                let paths = crate::path_filters::resolve(&paths)?;
                 let op = match (operation.as_deref(), since.as_deref()) {
                     (_, Some(since)) => store.restore_since(since, &paths, on_stale, &purpose)?,
                     (Some(operation), None) => store.undo(&UndoRequest {
@@ -239,7 +239,7 @@ async fn absorb(id: String, options: AbsorbOptions) -> Result<(Value, Outcome), 
             &mutation,
             level,
             |store| {
-                let paths = resolve_paths(&paths)?;
+                let paths = crate::path_filters::absorb(store, &id, &paths)?;
                 Ok(render::absorbed(&store.absorb(&id, &paths, &purpose)?))
             },
             |_, _, outcome, data| {

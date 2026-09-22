@@ -1,7 +1,6 @@
 //! A waiting recovery must not replay an operation another writer completed.
 
-use crate::common::{Fixture, TestResult, request, undo_request, wait_for_lock};
-use griz_core::content_hash;
+use crate::common::{Fixture, TestResult, in_lock_order, request, undo_request, wait_for_lock};
 use griz_store::{Operation, OperationState, Store, UndoRequest};
 use std::thread;
 
@@ -24,8 +23,8 @@ fn pending(fx: &Fixture) -> Result<Operation, Box<dyn std::error::Error>> {
 fn waiting_recovery_preserves_a_later_undo_of_the_completed_operation() -> TestResult {
     let fx = Fixture::new()?;
     let applied = pending(&fx)?;
-    let mut paths: Vec<_> = applied.files.iter().map(|file| file.path.clone()).collect();
-    paths.sort_by_cached_key(|path| content_hash(&path.to_string_lossy()));
+    let paths: Vec<_> = applied.files.iter().map(|file| file.path.clone()).collect();
+    let paths = in_lock_order(paths)?;
     let held = fx.store.lock_paths(&[paths[1].clone()])?;
     let home = fx.store.home().to_path_buf();
     let recovery = thread::spawn(move || {

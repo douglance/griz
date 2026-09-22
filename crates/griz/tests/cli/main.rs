@@ -11,6 +11,7 @@ mod conflicts;
 mod crash;
 mod definitions;
 mod diff_text;
+mod directory_aliases;
 mod doc_outcomes;
 mod doc_workflows;
 mod flow;

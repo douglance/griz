@@ -14,6 +14,7 @@ mod journal;
 mod listing;
 mod locks;
 mod merge;
+mod paths;
 mod plans;
 mod receipts;
 mod recovery;
@@ -29,6 +30,7 @@ pub use journal::{
     ConflictRegion, FileWrite, MergeConflict, Operation, OperationKind, OperationState, Restores,
 };
 pub use listing::Page;
+pub use paths::{PathResolver, destination_path, directory_path};
 pub use plans::{PlanRecord, Selection};
 pub use receipts::Claim;
 

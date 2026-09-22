@@ -2,8 +2,8 @@
 
 use crate::{
     annotations,
-    cmd_plan::resolve_all,
-    context::{CmdError, root, with_store},
+    cmd_plan::input_paths,
+    context::{CmdError, input_root, root, with_store},
     lines::{Address, address, merge_lines},
 };
 use griz_core::{ChangeKind, FileChange, render_diff};
@@ -156,7 +156,9 @@ pub fn log_command() -> CommandDef {
                 paths,
                 root: root_option,
             } = ctx.options;
-            let under = match root(root_option.as_deref()).and_then(|root| resolve_all(&root, paths)) {
+            let under = match input_root(root_option.as_deref())
+                .and_then(|root| crate::path_filters::resolve(&input_paths(&root, paths)))
+            {
                 Ok(paths) => paths,
                 Err(error) => return CmdError::result(error),
             };

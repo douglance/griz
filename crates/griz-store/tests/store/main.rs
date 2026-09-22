@@ -7,6 +7,7 @@ mod common;
 mod concurrent_absorb;
 mod concurrent_blobs;
 mod concurrent_open;
+mod directory_aliases;
 mod history_pagination;
 mod history_throughput;
 mod journal_order;

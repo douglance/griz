@@ -12,6 +12,7 @@ mod cmd_plan;
 mod cmd_read;
 mod context;
 mod lines;
+mod path_filters;
 mod plan_input;
 mod plan_schema;
 mod receipt;

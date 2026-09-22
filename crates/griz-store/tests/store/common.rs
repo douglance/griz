@@ -87,15 +87,30 @@ pub fn exists(path: &Path) -> bool {
     path.exists()
 }
 
+fn lock_key(path: &Path) -> Result<String, Box<dyn Error>> {
+    let parent = path.parent().ok_or("missing parent")?.canonicalize()?;
+    let path = parent.join(path.file_name().ok_or("missing name")?);
+    Ok(griz_core::content_hash(&path.to_string_lossy()))
+}
+
+/// Orders existing fixture paths by independently resolved lock identities.
+pub fn in_lock_order(paths: Vec<PathBuf>) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+    let mut keyed = paths
+        .into_iter()
+        .map(|path| lock_key(&path).map(|key| (key, path)))
+        .collect::<Result<Vec<_>, _>>()?;
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(keyed.into_iter().map(|(_, path)| path).collect())
+}
+
 /// Wait until another worker holds the file lock.
 pub fn wait_for_lock(store: &Store, path: &Path) -> TestResult {
-    use griz_core::content_hash;
     use std::{
         fs::{File, TryLockError},
         thread,
         time::{Duration, Instant},
     };
-    let hash = content_hash(&path.to_string_lossy());
+    let hash = lock_key(path)?;
     let file = File::options()
         .write(true)
         .open(store.home().join("locks").join(format!("{hash}.lock")))?;

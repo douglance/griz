@@ -1,7 +1,6 @@
 //! Undo and span restore refresh absorbed metadata after waiting for locks.
 
-use crate::common::{Fixture, TestResult, request, undo_request, wait_for_lock};
-use griz_core::content_hash;
+use crate::common::{Fixture, TestResult, in_lock_order, request, undo_request, wait_for_lock};
 use griz_store::{OnStale, Operation, OperationState, Store, UndoRequest};
 use std::{
     path::PathBuf,
@@ -19,11 +18,11 @@ fn fixture(fx: &Fixture) -> Result<(String, Vec<PathBuf>), Box<dyn std::error::E
         ops.push(fx.replace(name, "one", "ONE"));
     }
     let applied = fx.store.apply(&request(&fx.plan(ops)?))?;
-    let mut paths: Vec<_> = applied.files.iter().map(|file| file.path.clone()).collect();
+    let paths: Vec<_> = applied.files.iter().map(|file| file.path.clone()).collect();
     for path in &paths {
         std::fs::write(path, FORMATTED)?;
     }
-    paths.sort_by_cached_key(|path| content_hash(&path.to_string_lossy()));
+    let paths = in_lock_order(paths)?;
     Ok((applied.id, paths))
 }
 

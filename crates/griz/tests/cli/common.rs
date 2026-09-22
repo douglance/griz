@@ -27,6 +27,10 @@ impl Griz {
         Ok(griz)
     }
 
+    pub fn store(&self) -> Result<griz_store::Store, Box<dyn Error>> {
+        Ok(griz_store::Store::open(self.home.path())?)
+    }
+
     pub fn path(&self, name: &str) -> PathBuf {
         self.work.path().join(name)
     }
