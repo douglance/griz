@@ -135,5 +135,7 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo xtask check
-cargo test -p griz -- --ignored   # composition with apoc; needs apoc on PATH
+cargo test -p griz compose -- --ignored   # needs apoc on PATH
+cargo test -p griz documented_examples -- --ignored
+cargo test -p griz --release cli_round_trip_measurement -- --ignored --nocapture
 ```

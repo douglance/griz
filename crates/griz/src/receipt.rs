@@ -29,8 +29,8 @@ impl Mutation {
 }
 
 /// Runs `work` once per key. A repeated key with the same input answers with
-/// the original record, re-read through `replay`; with different input it is
-/// refused.
+/// the original receipt; additional detail is re-read through `replay` only
+/// when requested. Different input is refused.
 ///
 /// # Errors
 /// Returns the work's error, or an idempotency error.
@@ -57,6 +57,12 @@ pub fn run_mutation(
         }
         Claim::Replay(receipt) => {
             let (id, outcome) = decode(&receipt)?;
+            if level <= Verbosity::Error {
+                return Ok((
+                    json!({"id": id, "outcome": outcome, "replayed": true}),
+                    outcome,
+                ));
+            }
             let rendered = replay(store, &id, outcome)?;
             Ok((rendered.at(level, true), outcome))
         }

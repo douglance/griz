@@ -3,6 +3,7 @@
 mod apply_expect;
 mod at_file;
 mod common;
+mod compact_replay;
 mod compose;
 mod conflicts;
 mod crash;
@@ -16,5 +17,6 @@ mod mcp;
 mod replay;
 mod scope;
 mod syntax;
+mod throughput;
 mod verbosity;
 mod verdicts;
