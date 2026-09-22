@@ -40,24 +40,65 @@ pub fn temp_sibling(path: &Path) -> PathBuf {
     ))
 }
 
-/// Writes `text` to a temporary sibling and syncs it, returning the sibling.
+/// Owns a temporary file until rename, with best-effort cleanup on drop.
+pub struct StagedFile {
+    path: PathBuf,
+    committed: bool,
+}
+
+impl StagedFile {
+    /// Renames the staged contents into place.
+    ///
+    /// # Errors
+    /// Returns the rename error; dropping the owner attempts temporary cleanup.
+    pub fn commit(mut self, path: &Path) -> std::io::Result<()> {
+        std::fs::rename(&self.path, path)?;
+        self.committed = true;
+        Ok(())
+    }
+}
+
+impl Drop for StagedFile {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// Writes and syncs a temporary sibling, returning its cleanup owner.
 ///
 /// # Errors
 /// Returns an error when the directory or file cannot be written.
-pub fn stage(path: &Path, text: &str) -> std::io::Result<PathBuf> {
+pub fn stage(path: &Path, text: &str) -> std::io::Result<StagedFile> {
     let permissions = existing_permissions(path)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let temp = temp_sibling(path);
     let mut file = create_staged(&temp, permissions.as_ref())?;
+    let staged = StagedFile {
+        path: temp,
+        committed: false,
+    };
     failpoint("after_stage_create");
+    let result = write_staged(&mut file, text, permissions);
+    drop(file);
+    result?;
+    Ok(staged)
+}
+
+fn write_staged(
+    file: &mut std::fs::File,
+    text: &str,
+    permissions: Option<std::fs::Permissions>,
+) -> std::io::Result<()> {
     file.write_all(text.as_bytes())?;
+    failpoint_result("after_stage_write")?;
     if let Some(permissions) = permissions {
         file.set_permissions(permissions)?;
     }
-    file.sync_all()?;
-    Ok(temp)
+    file.sync_all()
 }
 
 fn existing_permissions(path: &Path) -> std::io::Result<Option<std::fs::Permissions>> {
@@ -89,6 +130,5 @@ fn create_staged(
 /// # Errors
 /// Returns an error when the file cannot be written or renamed.
 pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
-    let temp = stage(path, text)?;
-    std::fs::rename(temp, path)
+    stage(path, text)?.commit(path)
 }

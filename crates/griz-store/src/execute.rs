@@ -2,7 +2,7 @@
 
 use crate::{
     FileWrite, Operation, OperationState, Store, StoreError,
-    write::{failpoint, failpoint_result, stage},
+    write::{StagedFile, failpoint, failpoint_result, stage},
 };
 use std::path::{Path, PathBuf};
 
@@ -80,21 +80,15 @@ fn failpoint_after(index: usize) {
 }
 
 /// Stages every text write, removing what was staged if any fails.
-fn stage_all(targets: &[Target]) -> std::io::Result<Vec<Option<PathBuf>>> {
+fn stage_all(targets: &[Target]) -> std::io::Result<Vec<Option<StagedFile>>> {
     let mut staged = Vec::with_capacity(targets.len());
     for (index, target) in targets.iter().enumerate() {
         let temp = target
             .text
             .as_deref()
             .map(|text| stage(&target.path, text))
-            .transpose();
-        match temp {
-            Ok(temp) => staged.push(temp),
-            Err(error) => {
-                discard(&staged);
-                return Err(error);
-            }
-        }
+            .transpose()?;
+        staged.push(temp);
         mid_stage_failpoint(index);
     }
     Ok(staged)
@@ -108,17 +102,11 @@ fn mid_stage_failpoint(index: usize) {
     }
 }
 
-fn discard(staged: &[Option<PathBuf>]) {
-    for temp in staged.iter().flatten() {
-        let _ = std::fs::remove_file(temp);
-    }
-}
-
 /// Moves a staged file into place, or deletes the file when nothing is staged.
-fn commit(path: &Path, staged: Option<PathBuf>) -> std::io::Result<()> {
+fn commit(path: &Path, staged: Option<StagedFile>) -> std::io::Result<()> {
     failpoint_result("before_commit")?;
     match staged {
-        Some(temp) => std::fs::rename(temp, path),
+        Some(temp) => temp.commit(path),
         None => match std::fs::remove_file(path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             other => other,
