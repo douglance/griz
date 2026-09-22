@@ -18,6 +18,7 @@ mod plans;
 mod receipts;
 mod recovery;
 mod restore;
+mod restore_selection;
 mod write;
 
 pub use absorb::Absorbed;

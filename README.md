@@ -161,4 +161,5 @@ cargo test -p griz --release cli_round_trip_measurement -- --ignored --nocapture
 cargo test -p griz-core --release workspace_conversion_measurement -- --ignored --nocapture
 cargo test -p griz-store --release selection_measurement -- --ignored --nocapture
 cargo test -p griz-store --release history_pagination_measurement -- --ignored --nocapture
+cargo test -p griz-store --release restore_span_measurement -- --ignored --nocapture
 ```

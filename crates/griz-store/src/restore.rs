@@ -30,16 +30,14 @@ impl Store {
         on_stale: OnStale,
         purpose: &str,
     ) -> Result<Operation, StoreError> {
-        self.operation(since)?;
-        let span = self.operations_since(since)?;
+        let selected = self.select_restore(since, paths)?;
+        let _locks = self.lock_paths(&selected.paths)?;
+        let span = self.reload_operations(&selected.ids)?;
         let mut op = Operation::new(OperationKind::Undo, purpose);
         op.restores = Some(Restores {
             since: since.to_string(),
-            operations: span.iter().map(|entry| entry.id.clone()).collect(),
+            operations: selected.ids,
         });
-        let locked: Vec<PathBuf> = chains_by_path(&span, paths).into_keys().collect();
-        let _locks = self.lock_paths(&locked)?;
-        let span = self.reload_operations(&span)?;
         let chains = chains_by_path(&span, paths);
         let mut targets = Vec::new();
         for (path, chain) in &chains {

@@ -231,10 +231,9 @@ impl Store {
     /// Reloads exactly the selected records in their original order.
     pub(crate) fn reload_operations(
         &self,
-        selected: &[Operation],
+        selected: &[String],
     ) -> Result<Vec<Operation>, StoreError> {
-        let ids: Vec<_> = selected.iter().map(|op| &op.id).collect();
-        let ids = serde_json::to_string(&ids)?;
+        let ids = serde_json::to_string(selected)?;
         let bodies = self.with(|conn| {
             crate::bodies(
                 conn,

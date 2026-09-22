@@ -12,6 +12,8 @@ mod recovery;
 mod recovery_wait;
 mod restore;
 mod restore_boundary;
+mod restore_selection;
+mod restore_throughput;
 mod selection;
 mod selection_filters;
 mod selection_throughput;
