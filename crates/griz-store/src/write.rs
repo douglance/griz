@@ -45,14 +45,43 @@ pub fn temp_sibling(path: &Path) -> PathBuf {
 /// # Errors
 /// Returns an error when the directory or file cannot be written.
 pub fn stage(path: &Path, text: &str) -> std::io::Result<PathBuf> {
+    let permissions = existing_permissions(path)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let temp = temp_sibling(path);
-    let mut file = std::fs::File::create_new(&temp)?;
+    let mut file = create_staged(&temp, permissions.as_ref())?;
+    failpoint("after_stage_create");
     file.write_all(text.as_bytes())?;
+    if let Some(permissions) = permissions {
+        file.set_permissions(permissions)?;
+    }
     file.sync_all()?;
     Ok(temp)
+}
+
+fn existing_permissions(path: &Path) -> std::io::Result<Option<std::fs::Permissions>> {
+    match std::fs::metadata(path) {
+        Ok(metadata) => Ok(Some(metadata.permissions())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn create_staged(
+    path: &Path,
+    permissions: Option<&std::fs::Permissions>,
+) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    if let Some(permissions) = permissions {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        options.mode(permissions.mode());
+    }
+    #[cfg(not(unix))]
+    let _ = permissions;
+    options.open(path)
 }
 
 /// Replaces `path` with `text` through a temporary sibling and a rename.
