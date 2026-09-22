@@ -11,26 +11,43 @@ devsql.
 
 ```js
 // One apoc Code Mode program: rename across files, check, roll back on failure.
-const root = "/path/to/repo"; // over MCP, griz runs wherever its host started it
-const found = await griz.find({ root, literal: "oldName", glob: ["**/*.rs"], expect_matches: 12 });
+const root = "/path/to/repo";
+const expectedMatches = 12;
+const found = await griz.find({
+  root, regex: "\\boldName\\b", glob: ["**/*.rs"], limit: expectedMatches, expect_matches: expectedMatches,
+});
+if (found.outcome !== "passed")
+  return { stage: "find", outcome: found.outcome, reason: found.reason, total: found.total };
 const ops = found.matches.map(m => ({
   op: "replace", path: m.path, range: m.range, find: { text: m.text },
   replace: "new_name", expect_hash: m.file_hash,
 }));
-const plan = await griz.plan({ root, ops, purpose: "rename", idempotency_key: "rename-plan" });
-const applied = await griz.apply({ plan: plan.id, purpose: "rename", idempotency_key: "rename-apply" });
+const plan = await griz.plan({
+  root, ops, expect_edits: expectedMatches, expect_syntax: "clean",
+  purpose: "rename", idempotency_key: "rename-plan",
+});
+if (plan.outcome !== "passed") return { stage: "plan", ...plan };
+const applied = await griz.apply({
+  plan: plan.id, expect_files: found.files,
+  purpose: "rename", idempotency_key: "rename-apply",
+});
+if (applied.outcome !== "passed") return { stage: "apply", ...applied };
 const check = await apoc.execution_command({
   executable: "cargo", arg: ["check"], cwd: root, expect_exit_code: [0],
   purpose: "check the rename", idempotency_key: "rename-check",
 });
-if (check.outcome !== "passed") {
-  await griz.undo({ operation: applied.id, purpose: "roll back", idempotency_key: "rename-undo" });
-}
-return { plan: plan.id, check: check.outcome };
+const result = { stage: "check", operation: applied.id, check };
+if (check.outcome === "pending" || check.outcome === "passed") return result;
+const undone = await griz.undo({
+  root, operation: applied.id, purpose: "roll back", idempotency_key: "rename-undo",
+});
+return { ...result, undo: undone };
 ```
 
-Only what the program returns reaches the model. The 12 matches, the plan, and
-the check output stay inside the program.
+Only what the program returns reaches the model. A failed preflight stops before
+the next step. For a pending check, keep its execution id and the operation id,
+then wait for the check to finish before deciding whether to undo. A terminal
+check failure returns the undo verdict too; undo can refuse later file changes.
 
 ## Guarantees
 
@@ -57,8 +74,8 @@ the check output stay inside the program.
 - **Restores follow history.** `undo --since` rewinds a span of operations
   only where every file's writes hand off the same fingerprint; a change made
   outside griz in between refuses the restore.
-- **Parse facts, not judgments.** A plan reports whether each file still
-  parses; griz never refuses on it.
+- **Parse facts.** A plan reports whether each file still parses. Request
+  `expect_syntax: "clean"` to fail a plan that introduces syntax errors.
 - **Formatters do not break undo.** Run a formatter after `apply`, then
   `absorb` the operation; undo restores the text from before the apply.
 - **Retries are safe.** Mutations take an `idempotency_key`; the same key and

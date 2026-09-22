@@ -8,13 +8,13 @@ use crate::common::TestResult;
 use serde_json::Value;
 use std::{path::Path, process::Command};
 
-struct Apoc {
+pub(super) struct Apoc {
     root: tempfile::TempDir,
     runtime: tempfile::TempDir,
 }
 
 impl Apoc {
-    fn new(griz_home: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(super) fn new(griz_home: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let root = tempfile::tempdir()?;
         // A Unix socket path must stay short, so the runtime lives under /tmp.
         let runtime = tempfile::Builder::new().prefix("gz").tempdir_in("/tmp")?;
@@ -22,7 +22,7 @@ impl Apoc {
             "type": "stdio",
             "command": env!("CARGO_BIN_EXE_griz"),
             "args": ["--mcp"],
-            "env": { "GRIZ_HOME": griz_home },
+            "env": { "GRIZ_HOME": griz_home, "XDG_DATA_HOME": griz_home.join("xdg") },
         }}});
         std::fs::write(root.path().join(".claude.json"), config.to_string())?;
         Ok(Self { root, runtime })
@@ -40,7 +40,7 @@ impl Apoc {
         command
     }
 
-    fn run(
+    pub(super) fn run(
         &self,
         cwd: &Path,
         program: &str,

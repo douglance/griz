@@ -8,6 +8,8 @@ mod conflicts;
 mod crash;
 mod definitions;
 mod diff_text;
+mod doc_outcomes;
+mod doc_workflows;
 mod flow;
 mod log_scope;
 mod mcp;
