@@ -1,14 +1,89 @@
 //! Turning a `plan` call's inputs into operations: patch text, typed
 //! operations, and an LSP workspace edit, each also readable from `@path`.
 
-use crate::context::{CmdError, resolve, resolve_op};
+use crate::{
+    context::{CmdError, resolve, resolve_op},
+    render::PlanExpect,
+};
 use griz_core::{
     DiskSource, Op, PositionEncoding, WorkspaceEdit, parse_patch, workspace_edit_to_ops,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::path::Path;
 
-/// Parses `text` as `utf-8`, `utf-16`, or `utf-32`; `None` defaults to
+/// A normalized request, before any workspace-dependent conversion.
+pub struct PlanInput {
+    ops: Vec<Op>,
+    workspace_edit: Option<Value>,
+    encoding: PositionEncoding,
+}
+
+impl PlanInput {
+    /// Resolves explicit input files and paths without reading edit targets.
+    pub fn parse(
+        root: &Path,
+        ops: Option<Vec<Value>>,
+        patch: Option<&str>,
+        workspace_edit: Option<Value>,
+        encoding: PositionEncoding,
+    ) -> Result<Self, CmdError> {
+        Ok(Self {
+            ops: collect_ops(root, ops, patch)?,
+            workspace_edit: workspace_edit
+                .map(|value| json_input(root, value))
+                .transpose()?,
+            encoding,
+        })
+    }
+
+    /// Identifies the submitted request, independently of later file contents.
+    pub fn identity(&self, expect: PlanExpect, clean: bool) -> Value {
+        let mut input = json!({
+            "ops": self.ops, "expect": [expect.edits, expect.files], "syntax": clean
+        });
+        if let Some(edit) = &self.workspace_edit {
+            input["workspace_edit"] = json!({
+                "edit": edit, "position_encoding": encoding_name(self.encoding)
+            });
+        }
+        input
+    }
+
+    /// Converts positions only after the request has a new idempotency claim.
+    pub fn operations(self) -> Result<Vec<Op>, CmdError> {
+        let mut ops = self.ops;
+        ops.extend(collect_workspace_edit_ops(
+            self.workspace_edit,
+            self.encoding,
+        )?);
+        if ops.is_empty() {
+            return Err(CmdError::invalid(
+                "give `ops`, `patch`, or `workspace_edit`",
+            ));
+        }
+        Ok(ops)
+    }
+}
+
+fn encoding_name(encoding: PositionEncoding) -> &'static str {
+    match encoding {
+        PositionEncoding::Utf8 => "utf-8",
+        PositionEncoding::Utf16 => "utf-16",
+        PositionEncoding::Utf32 => "utf-32",
+    }
+}
+
+fn json_input(root: &Path, value: Value) -> Result<Value, CmdError> {
+    match value {
+        Value::String(text) => {
+            let text = at_file(root, &text)?.unwrap_or(text);
+            serde_json::from_str(&text)
+                .map_err(|e| CmdError::invalid(format!("workspace_edit must be JSON: {e}")))
+        }
+        other => Ok(other),
+    }
+}
+
 /// Whether the caller requires the plan's result to still parse. Only
 /// `clean` is accepted; nothing declared means no expectation.
 pub fn expect_clean(text: Option<&str>) -> Result<bool, CmdError> {
@@ -30,17 +105,11 @@ pub fn position_encoding(text: Option<&str>) -> Result<PositionEncoding, CmdErro
     }
 }
 
-/// Collects operations from `patch`, `ops`, and `workspace_edit`, in that
-/// order: patch hunks first, then typed operations, then a workspace edit's
-/// text edits and resource operations last. All three may be given in one
-/// call; later operations see the effect of earlier ones against the same
-/// file, exactly as several patch hunks for one file already do.
-pub fn collect_ops(
+/// Collects patch hunks first, then typed operations, without reading targets.
+fn collect_ops(
     root: &Path,
     ops: Option<Vec<Value>>,
     patch: Option<&str>,
-    workspace_edit: Option<Value>,
-    encoding: PositionEncoding,
 ) -> Result<Vec<Op>, CmdError> {
     let mut all = Vec::new();
     if let Some(patch) = patch {
@@ -55,12 +124,6 @@ pub fn collect_ops(
         let op: Op = serde_json::from_value(value)
             .map_err(|e| CmdError::invalid(format!("ops[{index}]: {e}")))?;
         all.push(resolve_op(root, op));
-    }
-    all.extend(collect_workspace_edit_ops(root, workspace_edit, encoding)?);
-    if all.is_empty() {
-        return Err(CmdError::invalid(
-            "give `ops`, `patch`, or `workspace_edit`",
-        ));
     }
     Ok(all)
 }
@@ -77,23 +140,13 @@ fn at_file(root: &Path, text: &str) -> Result<Option<String>, CmdError> {
         .map_err(|e| CmdError::invalid(format!("reading {file}: {e}")))
 }
 
-/// Parses `workspace_edit` (a JSON object, JSON text, or `@path` for CLI
-/// callers) and converts it to operations against the files it names.
+/// Converts a parsed workspace edit against the files it names.
 fn collect_workspace_edit_ops(
-    root: &Path,
     workspace_edit: Option<Value>,
     encoding: PositionEncoding,
 ) -> Result<Vec<Op>, CmdError> {
     let Some(value) = workspace_edit else {
         return Ok(Vec::new());
-    };
-    let value = match value {
-        Value::String(text) => {
-            let text = at_file(root, &text)?.unwrap_or(text);
-            serde_json::from_str(&text)
-                .map_err(|e| CmdError::invalid(format!("workspace_edit must be JSON: {e}")))?
-        }
-        other => other,
     };
     let edit: WorkspaceEdit = serde_json::from_value(value)
         .map_err(|e| CmdError::invalid(format!("workspace_edit: {e}")))?;

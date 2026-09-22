@@ -3,7 +3,7 @@
 use crate::{
     annotations,
     context::{CmdError, resolve, root, with_store},
-    plan_input::{collect_ops, expect_clean, position_encoding},
+    plan_input::{PlanInput, expect_clean, position_encoding},
     plan_schema::plan_input_schema,
     receipt::{Mutation, run_mutation},
     render::{self, PlanExpect},
@@ -70,7 +70,7 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
     let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
     let root = root(options.root.as_deref())?;
     let encoding = position_encoding(options.position_encoding.as_deref())?;
-    let ops = collect_ops(
+    let input = PlanInput::parse(
         &root,
         options.ops,
         options.patch.as_deref(),
@@ -85,7 +85,7 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
     let mutation = Mutation {
         command: "plan",
         key: options.idempotency_key,
-        input: json!({ "ops": ops, "expect": [expect.edits, expect.files], "syntax": expect_clean }),
+        input: input.identity(expect, expect_clean),
     };
     let purpose = options.purpose;
     with_store(move |store| {
@@ -94,6 +94,7 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
             &mutation,
             level,
             |store| {
+                let ops = input.operations()?;
                 let mut plan = build_plan(&ops, &DiskSource);
                 let syntax = plan.syntax;
                 let file_syntax = std::mem::take(&mut plan.file_syntax);

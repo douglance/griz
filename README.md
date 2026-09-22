@@ -101,6 +101,12 @@ Mutations answer `{id, outcome}` with `outcome` one of `passed`, `failed`
 `--verbosity warn|info|debug|trace` for more; `trace` returns the full record.
 A verdict other than `passed` exits nonzero.
 
+WorkspaceEdit plan retries compare the parsed edit JSON and position encoding
+(default `utf-16`) before reading target files. Keep any `@file` input available
+and unchanged for a retry. Older versions identified these requests by converted
+operations: their WorkspaceEdit keys now return `IDEMPOTENCY_CONFLICT`, while
+saved plan IDs remain usable. New planning requests need new keys.
+
 Operations, applied in order:
 
 ```text

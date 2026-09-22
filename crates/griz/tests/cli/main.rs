@@ -20,3 +20,4 @@ mod syntax;
 mod throughput;
 mod verbosity;
 mod verdicts;
+mod workspace_replay;
