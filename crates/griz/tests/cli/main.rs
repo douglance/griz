@@ -2,6 +2,7 @@
 
 mod apply_expect;
 mod at_file;
+mod blob_ids;
 mod common;
 mod compact_replay;
 mod compose;

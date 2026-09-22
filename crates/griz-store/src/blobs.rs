@@ -45,8 +45,17 @@ impl Store {
     /// Reads the text with fingerprint `hash`.
     ///
     /// # Errors
-    /// Returns an error when no such text is stored.
+    /// Returns an error when the fingerprint is malformed or no such text is stored.
     pub fn get_blob(&self, hash: &str) -> Result<String, StoreError> {
+        if hash.len() != 64
+            || !hash
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        {
+            return Err(StoreError::Invalid(
+                "blob fingerprint must be 64 lowercase hexadecimal characters".into(),
+            ));
+        }
         std::fs::read_to_string(self.blob_path(hash))
             .map_err(|_| StoreError::NotFound(format!("text {hash}")))
     }

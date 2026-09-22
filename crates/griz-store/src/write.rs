@@ -28,13 +28,16 @@ pub fn failpoint_result(name: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// A temporary sibling of `path`, unique to this process.
+/// A temporary sibling of `path`, with a fresh identifier for each write.
 #[must_use]
 pub fn temp_sibling(path: &Path) -> PathBuf {
     let name = path
         .file_name()
         .map_or_else(|| "griz".into(), |name| name.to_string_lossy().into_owned());
-    path.with_file_name(format!(".{name}.griz-{}.tmp", std::process::id()))
+    path.with_file_name(format!(
+        ".{name}.griz-{}.tmp",
+        uuid::Uuid::now_v7().simple()
+    ))
 }
 
 /// Writes `text` to a temporary sibling and syncs it, returning the sibling.
@@ -46,7 +49,7 @@ pub fn stage(path: &Path, text: &str) -> std::io::Result<PathBuf> {
         std::fs::create_dir_all(parent)?;
     }
     let temp = temp_sibling(path);
-    let mut file = std::fs::File::create(&temp)?;
+    let mut file = std::fs::File::create_new(&temp)?;
     file.write_all(text.as_bytes())?;
     file.sync_all()?;
     Ok(temp)

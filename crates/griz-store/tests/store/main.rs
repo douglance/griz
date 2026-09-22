@@ -1,8 +1,10 @@
 //! Behavior of the durable store: apply, undo, receipts, and recovery.
 
 mod apply;
+mod blob_ids;
 mod common;
 mod concurrent_absorb;
+mod concurrent_blobs;
 mod history_pagination;
 mod history_throughput;
 mod journal_order;
