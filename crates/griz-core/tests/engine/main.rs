@@ -4,6 +4,7 @@ mod common;
 mod definitions;
 mod diff_merge;
 mod find;
+mod find_positions;
 mod ladder;
 mod overwrite;
 mod patch;

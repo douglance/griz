@@ -6,7 +6,7 @@
 
 use crate::{
     ByteRange, content_hash,
-    matcher::line_of,
+    find_position::{self, Cursor, to_match},
     scope,
     structural::{self, Shape},
 };
@@ -222,11 +222,14 @@ fn collect_file(
     }
     page.files += 1;
     let hash = content_hash(text);
+    let mut cursor = Cursor::default();
     for hit in hits {
         let keep = page.total >= query.offset && page.matches.len() < query.limit;
         page.total += 1;
         if keep {
-            page.matches.push(to_match(path, text, hit, &hash));
+            let position = find_position::position(&mut cursor, text, hit.range.start);
+            page.matches
+                .push(to_match(path, text, hit, &hash, position));
         }
     }
 }
@@ -259,35 +262,4 @@ fn overrides(root: &Path, globs: &[String]) -> Result<ignore::overrides::Overrid
         builder.add(glob).map_err(|error| error.to_string())?;
     }
     builder.build().map_err(|error| error.to_string())
-}
-
-fn to_match(path: &Path, text: &str, hit: Hit, hash: &str) -> Match {
-    let whole = hit.range;
-    let line_start = text[..whole.start].rfind('\n').map_or(0, |at| at + 1);
-    Match {
-        path: path.to_path_buf(),
-        line: line_of(text, whole.start),
-        column: text[line_start..whole.start].chars().count() + 1,
-        range: ByteRange {
-            start: whole.start,
-            end: whole.end,
-        },
-        text: text[whole].to_string(),
-        captures: hit.captures,
-        vars: hit.vars,
-        var_ranges: hit
-            .var_ranges
-            .into_iter()
-            .map(|(name, range)| {
-                (
-                    name,
-                    ByteRange {
-                        start: range.start,
-                        end: range.end,
-                    },
-                )
-            })
-            .collect(),
-        file_hash: hash.to_string(),
-    }
 }
