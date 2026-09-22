@@ -3,8 +3,9 @@
 use crate::{
     FileWrite, Operation, OperationKind, OperationState, Store, StoreError,
     merge::{MergePair, Resolved, blob_text, record_resolved, resolve_target},
+    plans::FileRecord,
 };
-use griz_core::{Confidence, FileChange};
+use griz_core::Confidence;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -67,11 +68,10 @@ impl Store {
         if record.confidence < request.min_confidence {
             return self.refuse(op, "the plan has edits below the minimum confidence; select the confident edits or lower the minimum");
         }
-        let changes = self.plan_changes(&record)?;
-        let paths: Vec<PathBuf> = changes.iter().map(|change| change.path.clone()).collect();
+        let paths: Vec<PathBuf> = record.files.iter().map(|file| file.path.clone()).collect();
         let _locks = self.lock_paths(&paths)?;
-        let mut targets = Vec::with_capacity(changes.len());
-        for change in &changes {
+        let mut targets = Vec::with_capacity(record.files.len());
+        for change in &record.files {
             let resolved = self.resolve_change(change, request.on_stale)?;
             record_resolved(&mut op, &mut targets, change.path.clone(), resolved);
         }
@@ -87,16 +87,16 @@ impl Store {
 
     fn resolve_change(
         &self,
-        change: &FileChange,
+        change: &FileRecord,
         on_stale: OnStale,
     ) -> Result<Resolved, StoreError> {
         let pair = MergePair {
             base_hash: change.before_hash.as_deref(),
-            base: change.before.as_deref(),
+            base: blob_text(self, change.before_hash.as_deref())?,
             planned_hash: change.after_hash.as_deref(),
-            planned: change.after.as_deref(),
+            planned: blob_text(self, change.after_hash.as_deref())?,
         };
-        resolve_target(self, &change.path, &pair, on_stale)
+        resolve_target(self, &change.path, pair, on_stale)
     }
 
     /// Restores the files an operation wrote, for files still exactly as it
@@ -140,15 +140,13 @@ impl Store {
     /// undoes, from the text it left (`after`) back to the text it replaced
     /// (`before`).
     fn undo_target(&self, file: &FileWrite, on_stale: OnStale) -> Result<Resolved, StoreError> {
-        let base = blob_text(self, file.after_hash.as_deref())?;
-        let planned = blob_text(self, file.before_hash.as_deref())?;
         let pair = MergePair {
             base_hash: file.after_hash.as_deref(),
-            base: base.as_deref(),
+            base: blob_text(self, file.after_hash.as_deref())?,
             planned_hash: file.before_hash.as_deref(),
-            planned: planned.as_deref(),
+            planned: blob_text(self, file.before_hash.as_deref())?,
         };
-        resolve_target(self, &file.path, &pair, on_stale)
+        resolve_target(self, &file.path, pair, on_stale)
     }
 
     /// Marks `op` failed with `reason`, saves it, and hands it back.

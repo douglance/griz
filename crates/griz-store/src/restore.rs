@@ -84,15 +84,13 @@ impl Store {
         let target = chain
             .first()
             .ok_or_else(|| StoreError::Invalid("empty restore chain".into()))?;
-        let base = blob_text(self, guard.after_hash.as_deref())?;
-        let planned = blob_text(self, target.before_hash.as_deref())?;
         let pair = MergePair {
             base_hash: guard.after_hash.as_deref(),
-            base: base.as_deref(),
+            base: blob_text(self, guard.after_hash.as_deref())?,
             planned_hash: target.before_hash.as_deref(),
-            planned: planned.as_deref(),
+            planned: blob_text(self, target.before_hash.as_deref())?,
         };
-        resolve_target(self, path, &pair, on_stale)
+        resolve_target(self, path, pair, on_stale)
     }
 }
 

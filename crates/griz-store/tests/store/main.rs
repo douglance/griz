@@ -2,6 +2,7 @@
 
 mod absorb_selection;
 mod apply;
+mod apply_snapshots;
 mod blob_ids;
 mod common;
 mod concurrent_absorb;

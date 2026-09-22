@@ -23,11 +23,11 @@ pub struct MergePair<'a> {
     /// Fingerprint the write expects to find on disk.
     pub base_hash: Option<&'a str>,
     /// Text at `base_hash`.
-    pub base: Option<&'a str>,
+    pub base: Option<String>,
     /// Fingerprint the write wants to leave on disk.
     pub planned_hash: Option<&'a str>,
     /// Text at `planned_hash`.
-    pub planned: Option<&'a str>,
+    pub planned: Option<String>,
 }
 
 /// What resolving one file against `on_stale` produced.
@@ -49,7 +49,7 @@ pub enum Resolved {
 pub fn resolve_target(
     store: &Store,
     path: &Path,
-    pair: &MergePair<'_>,
+    pair: MergePair<'_>,
     on_stale: OnStale,
 ) -> Result<Resolved, StoreError> {
     let (current, current_hash) = read_current(path)?;
@@ -63,7 +63,7 @@ pub fn resolve_target(
     attempt_merge(
         store,
         path,
-        pair,
+        &pair,
         current.as_deref(),
         current_hash.as_deref(),
     )
@@ -73,14 +73,14 @@ fn ready(
     path: &Path,
     current_hash: Option<String>,
     current: Option<String>,
-    planned: Option<&str>,
+    planned: Option<String>,
     merged: bool,
 ) -> Target {
     Target {
         path: path.to_path_buf(),
         current_hash,
         current,
-        text: planned.map(str::to_string),
+        text: planned,
         merged,
     }
 }
@@ -94,9 +94,9 @@ fn attempt_merge(
 ) -> Result<Resolved, StoreError> {
     let (Some(base_hash), Some(base), Some(planned_hash), Some(planned), Some(now), Some(now_hash)) = (
         pair.base_hash,
-        pair.base,
+        pair.base.as_deref(),
         pair.planned_hash,
-        pair.planned,
+        pair.planned.as_deref(),
         current,
         current_hash,
     ) else {
@@ -108,7 +108,7 @@ fn attempt_merge(
                 path,
                 Some(now_hash.to_string()),
                 Some(now.to_string()),
-                Some(text.as_str()),
+                Some(text),
                 true,
             );
             Ok(Resolved::Ready(target))
