@@ -2,6 +2,8 @@
 
 mod apply;
 mod common;
+mod history_pagination;
+mod history_throughput;
 mod journal_order;
 mod migration;
 mod receipts;

@@ -192,12 +192,17 @@ impl Store {
         before: Option<&str>,
     ) -> Result<Vec<Operation>, StoreError> {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-        let bodies = self.with(|conn| {
-            crate::bodies(
+        let bodies = self.with(|conn| match before {
+            Some(before) => crate::bodies(
                 conn,
-                "SELECT body FROM operations WHERE (?1 IS NULL OR sequence < (SELECT sequence FROM operations WHERE id = ?1)) ORDER BY sequence DESC LIMIT ?2",
+                "SELECT body FROM operations WHERE sequence < (SELECT sequence FROM operations WHERE id = ?1) ORDER BY sequence DESC LIMIT ?2",
                 params![before, limit],
-            )
+            ),
+            None => crate::bodies(
+                conn,
+                "SELECT body FROM operations ORDER BY sequence DESC LIMIT ?1",
+                params![limit],
+            ),
         })?;
         bodies
             .iter()
