@@ -10,7 +10,10 @@ Code Mode program so matches, plans, and check output never reach the model.
 
 ## Rules
 
-- Pass `root` on every call. Over MCP, griz runs wherever its host started it.
+- Pass `root` on calls that resolve or display paths: `read`, `find`, `plan`,
+  `select`, `undo`, `absorb`, `log`, and `diff`. Over MCP, griz runs wherever
+  its host started it. `apply` and `get` use recorded ids and do not accept `root`.
+- For CLI programs that parse responses as JSON, pass `--format json`.
 - Pass `purpose` and a deterministic `idempotency_key` on `plan`, `select`,
   `apply`, and `undo`. Keys are scoped per command, so `"rename"` can name the
   plan and the apply of one change. A retried program then replays instead of
