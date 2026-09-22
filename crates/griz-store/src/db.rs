@@ -41,11 +41,26 @@ CREATE TABLE IF NOT EXISTS receipts (
 pub fn open(path: &Path) -> Result<Connection, StoreError> {
     let mut conn = Connection::open(path)?;
     conn.busy_timeout(std::time::Duration::from_secs(10))?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
+    enable_wal(&conn, path)?;
     if version(&conn)? < SCHEMA_VERSION {
         upgrade(&mut conn, path)?;
     }
     Ok(conn)
+}
+
+fn enable_wal(conn: &Connection, path: &Path) -> Result<(), StoreError> {
+    let mode: String = conn.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+    if mode == "wal" {
+        return Ok(());
+    }
+    let lock = std::fs::File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path.with_extension("init.lock"))?;
+    lock.lock()?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    Ok(())
 }
 
 fn version(conn: &Connection) -> Result<i64, StoreError> {

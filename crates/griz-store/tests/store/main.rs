@@ -5,6 +5,7 @@ mod blob_ids;
 mod common;
 mod concurrent_absorb;
 mod concurrent_blobs;
+mod concurrent_open;
 mod history_pagination;
 mod history_throughput;
 mod journal_order;
