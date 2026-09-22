@@ -2,6 +2,8 @@
 
 mod apply;
 mod common;
+mod journal_order;
+mod migration;
 mod receipts;
 mod recovery;
 mod restore;

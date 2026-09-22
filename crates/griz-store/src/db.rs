@@ -1,22 +1,26 @@
 //! Schema, migration, and connection setup.
 
 use crate::StoreError;
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use std::path::Path;
 
 /// Schema version this build writes.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
+
+const OPERATIONS: &str = "
+CREATE TABLE IF NOT EXISTS operations (
+    sequence INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    body TEXT NOT NULL
+);
+";
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS plans (
     id TEXT PRIMARY KEY,
     created_at INTEGER NOT NULL,
-    body TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS operations (
-    id TEXT PRIMARY KEY,
-    created_at INTEGER NOT NULL,
-    state TEXT NOT NULL,
     body TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS operations_state ON operations(state);
@@ -35,38 +39,66 @@ CREATE TABLE IF NOT EXISTS receipts (
 /// # Errors
 /// Returns an error when the file cannot be opened, backed up, or migrated.
 pub fn open(path: &Path) -> Result<Connection, StoreError> {
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     conn.busy_timeout(std::time::Duration::from_secs(10))?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
-    let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version(&conn)? < SCHEMA_VERSION {
+        upgrade(&mut conn, path)?;
+    }
+    Ok(conn)
+}
+
+fn version(conn: &Connection) -> Result<i64, StoreError> {
+    let version = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version > SCHEMA_VERSION {
         return Err(StoreError::Invalid(format!(
             "store schema {version} is newer than this griz ({SCHEMA_VERSION})"
         )));
     }
-    if version < SCHEMA_VERSION && has_tables(&conn)? {
-        backup(&conn, path, version)?;
-    }
-    conn.execute_batch(SCHEMA)?;
-    conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-    Ok(conn)
+    Ok(version)
 }
 
-fn has_tables(conn: &Connection) -> Result<bool, StoreError> {
+fn upgrade(conn: &mut Connection, path: &Path) -> Result<(), StoreError> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version = version(&tx)?;
+    if version == SCHEMA_VERSION {
+        return Ok(());
+    }
+    if has_table(&tx, None)? {
+        backup(path, version)?;
+    }
+    if has_table(&tx, Some("operations"))? {
+        tx.execute_batch("ALTER TABLE operations RENAME TO operations_v1")?;
+        tx.execute_batch(OPERATIONS)?;
+        tx.execute_batch(
+            "INSERT INTO operations (sequence, id, created_at, state, body)
+             SELECT rowid, id, created_at, state, body FROM operations_v1 ORDER BY rowid;
+             DROP TABLE operations_v1;",
+        )?;
+    } else {
+        tx.execute_batch(OPERATIONS)?;
+    }
+    tx.execute_batch(SCHEMA)?;
+    tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn has_table(conn: &Connection, name: Option<&str>) -> Result<bool, StoreError> {
     let count: i64 = conn.query_row(
-        "SELECT count(*) FROM sqlite_master WHERE type = 'table'",
-        [],
+        "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND (?1 IS NULL OR name = ?1)",
+        [name],
         |row| row.get(0),
     )?;
     Ok(count > 0)
 }
 
-fn backup(conn: &Connection, path: &Path, version: i64) -> Result<(), StoreError> {
-    conn.pragma_update(None, "wal_checkpoint", "TRUNCATE")?;
+fn backup(path: &Path, version: i64) -> Result<(), StoreError> {
     let target = path.with_extension(format!(
         "pre-v{SCHEMA_VERSION}-from-v{version}-{}.sqlite3",
-        crate::now_ms()
+        crate::new_id("backup")
     ));
-    std::fs::copy(path, target)?;
+    let source = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    source.execute("VACUUM INTO ?1", [target.to_string_lossy().as_ref()])?;
     Ok(())
 }

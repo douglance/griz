@@ -74,7 +74,9 @@ check failure returns the undo verdict too; undo can refuse later file changes.
 - **Restores follow history.** `undo --since` rewinds a span of operations
   only where every file's writes hand off the same fingerprint; a change made
   outside griz in between refuses the restore. The starting operation must
-  exist; an unknown ID is rejected before any restoration.
+  exist; an unknown ID is rejected before any restoration. History follows
+  journal order under file locks, so a delayed concurrent edit appears after
+  the writes it builds on, regardless of when its ID was created.
 - **Parse facts.** A plan reports whether each file still parses. Request
   `expect_syntax: "clean"` to fail a plan that introduces syntax errors.
 - **Formatters do not break undo.** Run a formatter after `apply`, then
@@ -128,7 +130,11 @@ cargo install griz
 griz --mcp            # MCP server: every command is a direct tool
 ```
 
-State lives in `$GRIZ_HOME`, or the user data directory.
+State lives in `$GRIZ_HOME`, or the user data directory. The journal uses schema 2.
+Opening a schema-1 store saves a consistent `*.pre-v2-from-v1-*.sqlite3` backup
+beside the database and preserves its insertion order during the upgrade.
+Older binaries refuse the upgraded store; keep the newer binary for continued
+use of that history.
 
 ## Workspace
 

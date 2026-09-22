@@ -182,7 +182,7 @@ impl Store {
         Ok(serde_json::from_str(&body)?)
     }
 
-    /// Operations newest first, starting below `before` when given.
+    /// Operations in reverse journal order, starting before `before` when given.
     ///
     /// # Errors
     /// Returns an error when the records cannot be read.
@@ -195,7 +195,7 @@ impl Store {
         let bodies = self.with(|conn| {
             crate::bodies(
                 conn,
-                "SELECT body FROM operations WHERE (?1 IS NULL OR id < ?1) ORDER BY id DESC LIMIT ?2",
+                "SELECT body FROM operations WHERE (?1 IS NULL OR sequence < (SELECT sequence FROM operations WHERE id = ?1)) ORDER BY sequence DESC LIMIT ?2",
                 params![before, limit],
             )
         })?;
@@ -213,7 +213,7 @@ impl Store {
         let bodies = self.with(|conn| {
             crate::bodies(
                 conn,
-                "SELECT body FROM operations WHERE state = 'applying' ORDER BY id",
+                "SELECT body FROM operations WHERE state = 'applying' ORDER BY sequence",
                 [],
             )
         })?;
@@ -232,7 +232,7 @@ impl Store {
         let bodies = self.with(|conn| {
             crate::bodies(
                 conn,
-                "SELECT body FROM operations WHERE id >= ?1 AND state = 'applied' ORDER BY id ASC",
+                "SELECT body FROM operations WHERE sequence >= (SELECT sequence FROM operations WHERE id = ?1) AND state = 'applied' ORDER BY sequence ASC",
                 params![since],
             )
         })?;
