@@ -1,5 +1,6 @@
 //! The griz binary, driven exactly as an agent or program drives it.
 
+mod absorb_replay;
 mod apply_expect;
 mod at_file;
 mod blob_ids;

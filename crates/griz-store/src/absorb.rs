@@ -6,10 +6,11 @@
 //! the text from before the apply, formatter changes included.
 
 use crate::{FileWrite, Operation, OperationState, Store, StoreError, execute::read_current};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// What an absorb did.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Absorbed {
     /// The operation, with its absorbed results.
     pub operation: Operation,

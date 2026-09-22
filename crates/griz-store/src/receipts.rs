@@ -26,6 +26,24 @@ impl Store {
         self.with(|conn| claim_in(conn, key, command, fingerprint))
     }
 
+    /// Saves immutable receipt details separately from the compact verdict.
+    ///
+    /// Receipt metadata can span many files and has no per-source-file size limit.
+    ///
+    /// # Errors
+    /// Returns an error when the snapshot cannot be encoded or written.
+    pub fn save_receipt_snapshot(&self, data: &Value) -> Result<String, StoreError> {
+        self.store_blob(&serde_json::to_string(data)?)
+    }
+
+    /// Reads a saved receipt snapshot by fingerprint.
+    ///
+    /// # Errors
+    /// Returns an error when the snapshot is missing or malformed.
+    pub fn receipt_snapshot(&self, hash: &str) -> Result<Value, StoreError> {
+        Ok(serde_json::from_str(&self.get_blob(hash)?)?)
+    }
+
     /// Records the result for a claimed key.
     ///
     /// # Errors

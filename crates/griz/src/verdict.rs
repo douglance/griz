@@ -76,6 +76,8 @@ pub struct Rendered {
     pub detail: Value,
     /// The complete record, for `trace`.
     pub record: Value,
+    /// Original result data needed when a later mutation can change the record.
+    pub replay_data: Option<Value>,
 }
 
 impl Rendered {

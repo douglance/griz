@@ -118,6 +118,12 @@ Mutations answer `{id, outcome}` with `outcome` one of `passed`, `failed`
 `--verbosity warn|info|debug|trace` for more; `trace` returns the full record.
 A verdict other than `passed` exits nonzero.
 
+Absorb retries retain the original call's counts, skipped-file reason, and
+operation snapshot, even after another absorb updates the operation. Use `get`
+for the operation's current state. Older absorb receipts saved only the ID and
+verdict: they still replay at `off` or `error` verbosity, but requesting details
+returns `IDEMPOTENCY_DETAIL_UNAVAILABLE` instead of reconstructing missing facts.
+
 WorkspaceEdit plan retries compare the parsed edit JSON and position encoding
 (default `utf-16`) before reading target files. Keep any `@file` input available
 and unchanged for a retry. Older versions identified these requests by converted

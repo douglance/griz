@@ -74,7 +74,7 @@ async fn apply(plan: String, options: ApplyOptions) -> Result<(Value, Outcome), 
             &mutation,
             level,
             |store| crate::apply_expect::apply(store, &request, expect_files),
-            |store, id, outcome| {
+            |store, id, outcome, _| {
                 Ok(render::operation(&store.operation(id)?, expect_files).with_outcome(outcome))
             },
         )
@@ -178,7 +178,7 @@ async fn undo(
                 };
                 Ok(render::operation(&op, None))
             },
-            |store, id, outcome| {
+            |store, id, outcome, _| {
                 Ok(render::operation(&store.operation(id)?, None).with_outcome(outcome))
             },
         )
@@ -213,6 +213,15 @@ pub fn absorb_command() -> CommandDef {
     .done()
 }
 
+/// Refuses details older receipts never saved instead of inventing a result.
+fn replay_absorb(data: Option<&Value>) -> Result<Absorbed, CmdError> {
+    let data = data.ok_or_else(|| CmdError {
+        code: "IDEMPOTENCY_DETAIL_UNAVAILABLE",
+        message: "this absorb receipt has no saved details; retry with verbosity error for its original verdict, or get the operation for its current state".into(),
+    })?;
+    serde_json::from_value(data.clone()).map_err(|error| griz_store::StoreError::from(error).into())
+}
+
 async fn absorb(id: String, options: AbsorbOptions) -> Result<(Value, Outcome), CmdError> {
     let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
     let root = root(options.root.as_deref())?;
@@ -229,13 +238,8 @@ async fn absorb(id: String, options: AbsorbOptions) -> Result<(Value, Outcome), 
             &mutation,
             level,
             |store| Ok(render::absorbed(&store.absorb(&id, &paths, &purpose)?)),
-            |store, id, outcome| {
-                let operation = store.operation(id)?;
-                let result = Absorbed {
-                    absorbed: operation.absorbed.clone(),
-                    skipped: Vec::new(),
-                    operation,
-                };
+            |_, _, outcome, data| {
+                let result = replay_absorb(data)?;
                 Ok(render::absorbed(&result).with_outcome(outcome))
             },
         )

@@ -39,7 +39,7 @@ pub fn run_mutation(
     mutation: &Mutation,
     level: Verbosity,
     work: impl FnOnce(&Store) -> Result<Rendered, CmdError>,
-    replay: impl FnOnce(&Store, &str, Outcome) -> Result<Rendered, CmdError>,
+    replay: impl FnOnce(&Store, &str, Outcome, Option<&Value>) -> Result<Rendered, CmdError>,
 ) -> Result<(Value, Outcome), CmdError> {
     let key = mutation.scoped_key();
     match store.claim(&key, mutation.command, &mutation.fingerprint())? {
@@ -51,7 +51,10 @@ pub fn run_mutation(
                     return Err(error);
                 }
             };
-            let receipt = json!({ "id": rendered.id, "outcome": rendered.outcome });
+            let mut receipt = json!({ "id": rendered.id, "outcome": rendered.outcome });
+            if let Some(data) = &rendered.replay_data {
+                receipt["snapshot"] = json!(store.save_receipt_snapshot(data)?);
+            }
             store.finish_receipt(&key, &receipt)?;
             Ok((rendered.at(level, false), rendered.outcome))
         }
@@ -63,7 +66,8 @@ pub fn run_mutation(
                     outcome,
                 ));
             }
-            let rendered = replay(store, &id, outcome)?;
+            let data = replay_data(store, &receipt)?;
+            let rendered = replay(store, &id, outcome, data.as_ref())?;
             Ok((rendered.at(level, true), outcome))
         }
         Claim::Conflict => Err(CmdError {
@@ -90,6 +94,18 @@ fn release_if_untouched(store: &Store, key: &str, error: &CmdError) -> Result<()
         store.release_receipt(key)?;
     }
     Ok(())
+}
+
+fn replay_data(store: &Store, receipt: &Value) -> Result<Option<Value>, CmdError> {
+    receipt
+        .get("snapshot")
+        .map(|value| {
+            let hash = value
+                .as_str()
+                .ok_or_else(|| CmdError::invalid("stored snapshot reference is malformed"))?;
+            Ok(store.receipt_snapshot(hash)?)
+        })
+        .transpose()
 }
 
 fn decode(receipt: &Value) -> Result<(String, Outcome), CmdError> {

@@ -103,7 +103,7 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
                     render::with_syntax(render::plan(&record, expect), syntax, &file_syntax);
                 Ok(render::expect_clean_syntax(rendered, syntax, expect_clean))
             },
-            |store, id, outcome| {
+            |store, id, outcome, _| {
                 let record = store.plan(id)?;
                 let changes = store.plan_changes(&record)?;
                 let file_syntax = griz_core::annotate(&changes);
@@ -184,7 +184,7 @@ async fn select(id: String, options: SelectOptions) -> Result<(Value, Outcome), 
                     PlanExpect::default(),
                 ))
             },
-            |store, id, outcome| {
+            |store, id, outcome, _| {
                 Ok(render::plan(&store.plan(id)?, PlanExpect::default()).with_outcome(outcome))
             },
         )

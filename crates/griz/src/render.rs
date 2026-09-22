@@ -69,6 +69,7 @@ pub fn plan_with(record: &PlanRecord, outcome: Outcome, reason: Option<String>) 
             "files": record.files.iter().map(|f| json!({ "path": f.path, "kind": f.kind })).collect::<Vec<_>>(),
         }),
         record: to_value(record),
+        replay_data: None,
     }
 }
 
@@ -158,6 +159,7 @@ pub fn operation_with(op: &Operation, outcome: Outcome, reason: Option<String>) 
             "restores": op.restores,
         }),
         record: to_value(op),
+        replay_data: None,
     }
 }
 
@@ -216,5 +218,6 @@ pub fn absorbed(result: &Absorbed) -> Rendered {
     let mut rendered = operation_with(&result.operation, outcome, reason);
     rendered.summary["absorbed"] = json!(result.absorbed.len());
     rendered.summary["skipped"] = json!(result.skipped.len());
+    rendered.replay_data = Some(to_value(result));
     rendered
 }

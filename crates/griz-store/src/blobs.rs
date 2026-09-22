@@ -34,6 +34,10 @@ impl Store {
                 text.len()
             )));
         }
+        self.store_blob(text)
+    }
+
+    pub(crate) fn store_blob(&self, text: &str) -> Result<String, StoreError> {
         let hash = content_hash(text);
         let path = self.blob_path(&hash);
         if !path.exists() {
