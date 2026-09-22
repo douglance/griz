@@ -21,6 +21,7 @@ mod restore_selection;
 mod restore_throughput;
 mod selection;
 mod selection_filters;
+mod selection_inputs;
 mod selection_throughput;
 mod staging_cleanup;
 mod undo;

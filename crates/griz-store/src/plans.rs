@@ -175,13 +175,23 @@ impl Store {
             .collect()
     }
 
-    fn plan_source(&self, record: &PlanRecord) -> Result<MapSource, StoreError> {
+    fn plan_source(&self, record: &PlanRecord, ops: &[Op]) -> Result<MapSource, StoreError> {
+        let needed = (ops.len() != record.ops.len()).then(|| input_paths(ops));
         let mut files = record
             .unchanged_inputs
             .iter()
+            .filter(|(path, _)| {
+                needed
+                    .as_ref()
+                    .is_none_or(|paths| paths.contains(path.as_path()))
+            })
             .map(|(path, hash)| Ok((path.clone(), self.text(hash.as_deref())?)))
             .collect::<Result<BTreeMap<_, _>, StoreError>>()?;
-        for file in &record.files {
+        for file in record.files.iter().filter(|file| {
+            needed
+                .as_ref()
+                .is_none_or(|paths| paths.contains(file.path.as_path()))
+        }) {
             files.insert(file.path.clone(), self.text(file.before_hash.as_deref())?);
         }
         Ok(MapSource::new(files))
@@ -204,10 +214,21 @@ impl Store {
     ) -> Result<PlanRecord, StoreError> {
         let original = self.plan(id)?;
         let ops = selected_ops(&original, selection);
-        let source = self.plan_source(&original)?;
+        let source = self.plan_source(&original, &ops)?;
         let plan = build_plan(&ops, &source);
         self.store_plan(purpose, ops, plan, Some(original.id))
     }
+}
+
+fn input_paths(ops: &[Op]) -> BTreeSet<&Path> {
+    let mut paths = BTreeSet::new();
+    for op in ops {
+        paths.insert(op.path().as_path());
+        if let Op::Move { to, .. } = op {
+            paths.insert(to.as_path());
+        }
+    }
+    paths
 }
 
 struct Kept {

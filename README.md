@@ -107,6 +107,8 @@ check failure returns the undo verdict too; undo can refuse later file changes.
 - **Selection uses saved inputs.** Selecting part of a plan uses its original
   file snapshots, including files whose operations cancelled out. An older plan
   missing a required snapshot is refused; plan again to use current files.
+  Selection loads only snapshots needed by the operations it keeps, including
+  both ends of a move; missing discarded snapshots do not block selection.
 - **Retries are safe.** Mutations take an `idempotency_key`; the same key and
   input replay the original result, and different input with the same key is
   refused.
