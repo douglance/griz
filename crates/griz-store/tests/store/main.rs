@@ -6,4 +6,6 @@ mod receipts;
 mod recovery;
 mod restore;
 mod selection;
+mod selection_filters;
+mod selection_throughput;
 mod undo;

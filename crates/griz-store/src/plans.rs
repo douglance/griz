@@ -203,33 +203,46 @@ impl Store {
         purpose: &str,
     ) -> Result<PlanRecord, StoreError> {
         let original = self.plan(id)?;
-        let ops: Vec<Op> = original
-            .ops
-            .iter()
-            .enumerate()
-            .filter(|(index, op)| keeps(&original, selection, *index, op))
-            .map(|(_, op)| op.clone())
-            .collect();
+        let ops = selected_ops(&original, selection);
         let source = self.plan_source(&original)?;
         let plan = build_plan(&ops, &source);
         self.store_plan(purpose, ops, plan, Some(original.id))
     }
 }
 
-fn keeps(plan: &PlanRecord, selection: &Selection, index: usize, op: &Op) -> bool {
-    let edits: Vec<&Edit> = plan.edits.iter().filter(|edit| edit.op == index).collect();
-    let touched: BTreeSet<&Path> = std::iter::once(op.path().as_path())
-        .chain(edits.iter().map(|edit| edit.path.as_path()))
+struct Kept {
+    by_path: bool,
+    by_edit: bool,
+    by_confidence: bool,
+}
+
+fn selected_ops(plan: &PlanRecord, selection: &Selection) -> Vec<Op> {
+    let paths: BTreeSet<&Path> = selection.paths.iter().map(PathBuf::as_path).collect();
+    let edits: BTreeSet<&str> = selection.edits.iter().map(String::as_str).collect();
+    let mut kept: Vec<_> = plan
+        .ops
+        .iter()
+        .map(|op| Kept {
+            by_path: paths.is_empty() || paths.contains(op.path().as_path()),
+            by_edit: edits.is_empty(),
+            by_confidence: true,
+        })
         .collect();
-    let by_path = selection.paths.is_empty()
-        || selection
-            .paths
-            .iter()
-            .any(|path| touched.contains(path.as_path()));
-    let by_edit =
-        selection.edits.is_empty() || edits.iter().any(|edit| selection.edits.contains(&edit.id));
-    let by_confidence = selection
-        .min_confidence
-        .is_none_or(|min| edits.iter().all(|edit| edit.confidence >= min));
-    by_path && by_edit && by_confidence
+    for edit in &plan.edits {
+        let trusted = selection
+            .min_confidence
+            .is_none_or(|min| edit.confidence >= min);
+        let Some(kept) = kept.get_mut(edit.op) else {
+            continue;
+        };
+        kept.by_path |= paths.contains(edit.path.as_path());
+        kept.by_edit |= edits.contains(edit.id.as_str());
+        kept.by_confidence &= trusted;
+    }
+    plan.ops
+        .iter()
+        .zip(kept)
+        .filter(|(_, kept)| kept.by_path && kept.by_edit && kept.by_confidence)
+        .map(|(op, _)| op.clone())
+        .collect()
 }
