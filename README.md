@@ -73,7 +73,8 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   later edits. An undo is itself an operation that can be undone.
 - **Restores follow history.** `undo --since` rewinds a span of operations
   only where every file's writes hand off the same fingerprint; a change made
-  outside griz in between refuses the restore.
+  outside griz in between refuses the restore. The starting operation must
+  exist; an unknown ID is rejected before any restoration.
 - **Parse facts.** A plan reports whether each file still parses. Request
   `expect_syntax: "clean"` to fail a plan that introduces syntax errors.
 - **Formatters do not break undo.** Run a formatter after `apply`, then

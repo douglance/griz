@@ -15,6 +15,7 @@ mod flow;
 mod log_scope;
 mod mcp;
 mod replay;
+mod restore_boundary;
 mod scope;
 mod selection_snapshot;
 mod syntax;

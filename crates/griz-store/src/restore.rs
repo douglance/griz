@@ -21,7 +21,8 @@ impl Store {
     /// `paths`; an empty span, or one only `paths` excludes, refuses.
     ///
     /// # Errors
-    /// Returns an error when the span or a file cannot be read, or a write fails.
+    /// Returns `NotFound` when the starting operation does not exist, or an
+    /// error when the span or a file cannot be read, or a write fails.
     pub fn restore_since(
         &self,
         since: &str,
@@ -29,6 +30,7 @@ impl Store {
         on_stale: OnStale,
         purpose: &str,
     ) -> Result<Operation, StoreError> {
+        self.operation(since)?;
         let span = self.operations_since(since)?;
         let mut op = Operation::new(OperationKind::Undo, purpose);
         op.restores = Some(Restores {
