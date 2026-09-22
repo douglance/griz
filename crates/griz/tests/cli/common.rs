@@ -41,7 +41,8 @@ impl Griz {
     }
 
     pub fn read(&self, name: &str) -> Result<String, Box<dyn Error>> {
-        Ok(std::fs::read_to_string(self.path(name))?)
+        std::fs::read_to_string(self.path(name))
+            .map_err(|error| format!("could not read fixture {name}: {error}").into())
     }
 
     pub fn command(&self, args: &[&str]) -> Command {
@@ -58,7 +59,10 @@ impl Griz {
     }
 
     pub fn run(&self, args: &[&str]) -> Result<Run, Box<dyn Error>> {
-        let output = self.command(args).output()?;
+        let output = self
+            .command(args)
+            .output()
+            .map_err(|error| format!("could not run griz {args:?}: {error}"))?;
         let stdout = String::from_utf8(output.stdout)?;
         let json = serde_json::from_str(&stdout).map_err(|e| {
             format!(

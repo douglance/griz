@@ -1,10 +1,13 @@
 //! MCP serves each command as its own direct tool.
 
+mod addressing;
+mod transport;
+
 use serde_json::{Value, json};
 use std::{
     error::Error,
-    io::{BufRead, BufReader, Write},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    io::Write,
+    process::{Child, ChildStdin, Command, Stdio},
 };
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -13,7 +16,7 @@ type TestResult = Result<(), Box<dyn Error>>;
 struct Mcp {
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    stdout: std::sync::mpsc::Receiver<std::io::Result<String>>,
     next_id: u64,
     _home: tempfile::TempDir,
 }
@@ -48,7 +51,7 @@ impl Mcp {
             .stderr(Stdio::null())
             .spawn()?;
         let stdin = child.stdin.take().ok_or("no stdin")?;
-        let stdout = BufReader::new(child.stdout.take().ok_or("no stdout")?);
+        let stdout = transport::lines(child.stdout.take().ok_or("no stdout")?);
         Ok(Self {
             child,
             stdin,
@@ -63,8 +66,9 @@ impl Mcp {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))?;
-        let mut line = String::new();
-        self.stdout.read_line(&mut line)?;
+        let line = self
+            .stdout
+            .recv_timeout(std::time::Duration::from_secs(10))??;
         Ok(serde_json::from_str(&line)?)
     }
 

@@ -15,6 +15,7 @@ mod doc_workflows;
 mod flow;
 mod log_scope;
 mod mcp;
+mod read_address;
 mod replay;
 mod restore_boundary;
 mod scope;

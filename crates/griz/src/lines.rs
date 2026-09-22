@@ -42,17 +42,13 @@ pub struct Address {
 /// Returns a message for a bad pattern or range.
 pub fn address(text: &str, address: &Address) -> Result<Selected, String> {
     let all: Vec<&str> = text.lines().collect();
-    let keep: Vec<bool> = match (&address.grep, &address.lines) {
-        (Some(pattern), _) => by_pattern(&all, pattern, address.context)?,
-        (None, Some(range)) => by_range(all.len(), range)?,
-        (None, None) => vec![true; all.len()],
-    };
-    let matched = match &address.grep {
-        Some(pattern) => {
-            let regex = Regex::new(pattern).map_err(|e| e.to_string())?;
-            Some(all.iter().filter(|line| regex.is_match(line)).count())
+    let (keep, matched) = match (&address.grep, &address.lines) {
+        (Some(pattern), _) => {
+            let (keep, matched) = by_pattern(&all, pattern, address.context)?;
+            (keep, Some(matched))
         }
-        None => None,
+        (None, Some(range)) => (by_range(all.len(), range)?, None),
+        (None, None) => (vec![true; all.len()], None),
     };
     Ok(Selected {
         lines: all
@@ -69,18 +65,26 @@ pub fn address(text: &str, address: &Address) -> Result<Selected, String> {
     })
 }
 
-fn by_pattern(all: &[&str], pattern: &str, context: usize) -> Result<Vec<bool>, String> {
+fn by_pattern(all: &[&str], pattern: &str, context: usize) -> Result<(Vec<bool>, usize), String> {
     let regex = Regex::new(pattern).map_err(|e| e.to_string())?;
     let mut keep = vec![false; all.len()];
+    let mut covered = 0;
+    let mut matched = 0;
     for (index, _) in all
         .iter()
         .enumerate()
         .filter(|(_, line)| regex.is_match(line))
     {
-        let end = (index + context + 1).min(all.len());
-        keep[index.saturating_sub(context)..end].fill(true);
+        let end = index
+            .saturating_add(context)
+            .saturating_add(1)
+            .min(all.len());
+        let start = index.saturating_sub(context).max(covered);
+        keep[start..end].fill(true);
+        covered = end;
+        matched += 1;
     }
-    Ok(keep)
+    Ok((keep, matched))
 }
 
 fn by_range(total: usize, range: &str) -> Result<Vec<bool>, String> {
