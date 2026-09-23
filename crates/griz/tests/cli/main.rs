@@ -5,6 +5,7 @@ mod anchor_overlap;
 mod apply_expect;
 mod at_file;
 mod blob_ids;
+mod case_aliases;
 mod common;
 mod compact_replay;
 mod compose;

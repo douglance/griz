@@ -95,7 +95,12 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   suffixes stay creatable; dangling directory links are rejected. Older saved
   paths and their original filters remain usable, but a write containing multiple
   paths to the same destination is refused before staging. This identifies parent
-  directories; final file-name case aliases are separate.
+  directories.
+- **Existing filename aliases compose.** When the filesystem resolves differently
+  cased names to one existing file, reads, plans, and filters use its actual entry
+  name. Case-sensitive filesystems keep distinct names separate, as do distinct
+  hard-link entries. This does not add case-only renames or infer equivalence
+  between new filenames that do not yet exist.
 - **File aliases address their targets.** New reads, plans, and path filters
   resolve file symlinks without replacing the links. Edits through an alias and
   its target compose in one file. A saved plan keeps that target even if the alias

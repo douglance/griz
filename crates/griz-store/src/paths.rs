@@ -45,10 +45,14 @@ fn follow_file_links(resolver: &mut PathResolver, path: &Path) -> io::Result<Pat
         let parent = entry.parent().unwrap_or_else(|| Path::new("."));
         entry = resolver.resolve(&parent.join(target))?;
     }
-    Ok(entry)
+    match std::fs::canonicalize(&entry) {
+        Ok(path) => Ok(path),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(entry),
+        Err(error) => Err(error),
+    }
 }
 
-fn file_link(path: &Path) -> io::Result<Option<PathBuf>> {
+pub(crate) fn file_link(path: &Path) -> io::Result<Option<PathBuf>> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => std::fs::read_link(path).map(Some),
         Ok(_) => Ok(None),
@@ -94,7 +98,7 @@ pub struct PathResolver {
 }
 
 impl PathResolver {
-    /// Resolves file links to their targets, caching each submitted path for this batch.
+    /// Resolves links and existing filename spelling, caching each path for this batch.
     ///
     /// # Errors
     /// Returns an error for inaccessible paths or symbolic-link cycles.

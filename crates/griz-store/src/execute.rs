@@ -79,12 +79,12 @@ fn validate_destinations(targets: &[Target]) -> Result<(), StoreError> {
     let mut resolver = crate::PathResolver::default();
     for target in targets {
         let entry = resolver.resolve(&target.path)?;
-        if resolver.resolve_file(&target.path)? != entry {
+        if crate::paths::file_link(&entry)?.is_some() {
             return Err(StoreError::Invalid(
                 "planned path names a file symlink; plan again to record its target".into(),
             ));
         }
-        if !paths.insert(entry) {
+        if !paths.insert(resolver.resolve_file(&entry)?) {
             return Err(StoreError::Invalid(
                 "multiple planned paths refer to the same destination; plan again".into(),
             ));

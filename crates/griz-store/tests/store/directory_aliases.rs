@@ -85,6 +85,22 @@ fn stored_aliases_are_rejected_before_either_write() -> TestResult {
 }
 
 #[test]
+fn stored_case_aliases_are_rejected_before_either_write() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.write("target.txt", "one two\n")?;
+    if !fx.path("TARGET.txt").exists() {
+        return Ok(());
+    }
+    let plan = fx.plan(vec![
+        fx.replace("target.txt", "one", "ONE"),
+        fx.replace("TARGET.txt", "two", "TWO"),
+    ])?;
+    let result = fx.store.apply(&request(&plan));
+    assert!(matches!(result, Err(StoreError::Invalid(_))), "{result:?}");
+    assert_eq!(fx.read("target.txt")?, "one two\n");
+    Ok(())
+}
+#[test]
 fn directory_aliases_hold_one_canonical_destination_lock() -> TestResult {
     let fx = Fixture::new()?;
     fs::create_dir(fx.path("actual"))?;

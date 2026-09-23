@@ -22,7 +22,7 @@ impl Store {
             .iter()
             .map(|path| {
                 resolver
-                    .resolve(path)
+                    .resolve_file(path)
                     .map(|path| content_hash(&path.to_string_lossy()))
             })
             .collect::<Result<_, _>>()?;
