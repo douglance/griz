@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 
 class CommandFailure(Exception):
@@ -91,13 +92,25 @@ def plan_edit(options):
             "stage": "find", "outcome": "error",
             "reason": "find returned malformed matches", "response": found,
         }) from error
-    plan = griz_command(options, "plan", [
-        "--root", options.root, "--ops", json.dumps(ops),
-        "--expect-edits", str(options.expected_matches),
-        "--expect-files", str(file_count), "--expect-syntax", "clean",
-        *mutation_options(options, "plan"),
-    ], "plan")
-    return plan, file_count
+    return plan_from_ops(options, ops, file_count), file_count
+
+
+def plan_from_ops(options, ops, file_count):
+    try:
+        with tempfile.TemporaryDirectory(prefix="griz-ops-") as directory:
+            payload = Path(directory) / "ops.json"
+            payload.write_text(json.dumps(ops), encoding="utf-8")
+            return griz_command(options, "plan", [
+                "--root", options.root, "--ops", "@" + str(payload),
+                "--expect-edits", str(options.expected_matches),
+                "--expect-files", str(file_count), "--expect-syntax", "clean",
+                *mutation_options(options, "plan"),
+            ], "plan")
+    except OSError as error:
+        raise CommandFailure({
+            "stage": "plan", "outcome": "error",
+            "reason": "plan input: " + str(error),
+        }) from error
 
 
 def check_report(options, check):

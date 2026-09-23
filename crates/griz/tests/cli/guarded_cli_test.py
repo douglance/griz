@@ -79,6 +79,48 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(self.marker.exists())
 
 
+
+    def test_large_plan_uses_cleaned_up_input_file(self):
+        self.file.write_text("oldName\n" * 128)
+        self.options.expected_matches = 128
+        staged = []
+        def intercept(stage, argv, kwargs):
+            if stage == "plan":
+                argument = argv[argv.index("--ops") + 1]
+                self.assertTrue(argument.startswith("@"), "operations still passed inline")
+                payload = Path(argument[1:])
+                staged.append(payload)
+                operations = json.loads(payload.read_text())
+                self.assertEqual(len(operations), 128)
+                self.assertTrue(all(op["expect_hash"] for op in operations))
+                self.assertLess(sum(len(arg.encode()) for arg in argv), 4096)
+        result = self.workflow(intercept)
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(self.file.read_text(), "new_name\n" * 128)
+        self.assertEqual(len(staged), 1)
+        self.assertFalse(staged[0].exists())
+        self.assertFalse(staged[0].parent.exists())
+
+    def test_rejected_plan_cleans_up_input_file(self):
+        staged = []
+        def intercept(stage, argv, kwargs):
+            if stage == "plan":
+                argument = argv[argv.index("--ops") + 1]
+                self.assertTrue(argument.startswith("@"), "operations still passed inline")
+                staged.append(Path(argument[1:]))
+                argv[argv.index("--expect-edits") + 1] = "2"
+        result = self.workflow(intercept)
+        self.assert_stopped(result, "plan", ["find", "plan"])
+        self.assertFalse(staged[0].exists())
+        self.assertFalse(staged[0].parent.exists())
+        self.assertIn("expected 2 edits", result["stdout"])
+
+    def test_plan_input_write_failure_stops_before_apply(self):
+        with patch.object(example.Path, "write_text", side_effect=PermissionError("no space for input")):
+            result = self.workflow()
+        self.assert_stopped(result, "plan", ["find"])
+        self.assertIn("no space for input", result["reason"])
+
     def test_successful_check_output_is_compact(self):
         self.options.check = [sys.executable, "-c",
                               "import sys; print('é' * 10000); print('warning', file=sys.stderr)"]
