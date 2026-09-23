@@ -10,6 +10,64 @@ use std::{
 };
 
 #[test]
+#[ignore = "manual release-mode existing and missing filename lookup timing"]
+fn filename_resolution_measurement() -> TestResult {
+    let fx = Fixture::new()?;
+    for count in [128, 1024] {
+        let existing: Vec<_> = (0..count)
+            .map(|i| fx.path(&format!("file-{i}.txt")))
+            .collect();
+        for path in &existing {
+            fs::write(path, "content")?;
+        }
+        let missing: Vec<_> = (0..count)
+            .map(|i| fx.path(&format!("missing-{i}.txt")))
+            .collect();
+        measure_paths(count, "existing", &existing)?;
+        measure_paths(count, "missing", &missing)?;
+    }
+    Ok(())
+}
+
+fn measure_paths(count: usize, label: &str, paths: &[std::path::PathBuf]) -> TestResult {
+    let mut samples = Vec::new();
+    for _ in 0..9 {
+        let start = std::time::Instant::now();
+        resolve_batch(paths)?;
+        samples.push(start.elapsed().as_micros());
+    }
+    samples.sort_unstable();
+    println!(
+        "resolve count={count} kind={label} median_us={}",
+        samples[4]
+    );
+    Ok(())
+}
+
+fn resolve_batch(paths: &[std::path::PathBuf]) -> TestResult {
+    let mut resolver = griz_store::PathResolver::default();
+    for path in paths {
+        std::hint::black_box(resolver.resolve_file(path)?);
+    }
+    Ok(())
+}
+
+#[test]
+fn file_alias_chains_beyond_native_canonicalization_limits_resolve() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.write("target.txt", "content")?;
+    let mut target = fx.path("target.txt");
+    for index in 0..64 {
+        let link = fx.path(&format!("link-{index}.txt"));
+        symlink(&target, &link)?;
+        target = link;
+    }
+    let actual = griz_store::PathResolver::default().resolve_file(&target)?;
+    assert_eq!(actual, fx.path("target.txt").canonicalize()?);
+    assert!(target.is_symlink());
+    Ok(())
+}
+#[test]
 fn file_alias_targets_are_cached_only_within_one_batch() -> TestResult {
     let fx = Fixture::new()?;
     fx.write("first.txt", "first")?;

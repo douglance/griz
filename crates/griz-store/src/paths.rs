@@ -34,6 +34,10 @@ pub fn directory_path(path: &Path) -> io::Result<PathBuf> {
 
 fn follow_file_links(resolver: &mut PathResolver, path: &Path) -> io::Result<PathBuf> {
     let mut entry = resolver.resolve(path)?;
+    let original = match std::fs::canonicalize(&entry) {
+        Ok(path) => return Ok(path),
+        Err(error) => error,
+    };
     let mut visited = std::collections::BTreeSet::new();
     while let Some(target) = file_link(&entry)? {
         if !visited.insert(entry.clone()) {
@@ -44,6 +48,12 @@ fn follow_file_links(resolver: &mut PathResolver, path: &Path) -> io::Result<Pat
         }
         let parent = entry.parent().unwrap_or_else(|| Path::new("."));
         entry = resolver.resolve(&parent.join(target))?;
+    }
+    if visited.is_empty() {
+        return match original.kind() {
+            io::ErrorKind::NotFound => Ok(entry),
+            _ => Err(original),
+        };
     }
     match std::fs::canonicalize(&entry) {
         Ok(path) => Ok(path),
