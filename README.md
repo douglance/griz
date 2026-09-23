@@ -53,6 +53,9 @@ check failure returns the undo verdict too; undo can refuse later file changes.
 
 - **Nothing is written before apply.** `plan` builds every file's new text in
   memory and records it; `diff` shows it.
+- **Search failures are explicit.** Missing search paths, traversal errors, and
+  file read failures return an error instead of an empty or partial result.
+  Non-UTF-8 files are skipped; empty readable directories still return no matches.
 - **Stale files are refused.** Every match and every planned file carries the
   fingerprint of the text it was computed against. `apply` writes nothing
   unless every file still has that fingerprint, or, with `on_stale: "merge"`,

@@ -1,6 +1,7 @@
 //! MCP serves each command as its own direct tool.
 
 mod addressing;
+mod search_errors;
 mod transport;
 
 use serde_json::{Value, json};

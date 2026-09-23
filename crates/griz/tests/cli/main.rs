@@ -14,6 +14,7 @@ mod diff_text;
 mod directory_aliases;
 mod doc_outcomes;
 mod doc_workflows;
+mod find_io;
 mod flow;
 mod guarded_cli;
 mod log_scope;

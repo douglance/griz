@@ -104,14 +104,15 @@ pub struct Hit {
 /// Runs a query.
 ///
 /// # Errors
-/// Returns a message for a bad pattern, a bad glob, or no pattern at all.
+/// Returns a message for an invalid query or a filesystem traversal/read failure.
+/// Files that are not UTF-8 are skipped.
 pub fn find(query: &FindQuery) -> Result<FindPage, String> {
     let matcher = Matcher::new(query)?;
     let paths = files(query)?;
     validate_within(query, &paths)?;
     let mut page = FindPage::default();
     for path in paths {
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        let Some(text) = read_text(&path)? else {
             continue;
         };
         let window = (
@@ -126,6 +127,14 @@ pub fn find(query: &FindQuery) -> Result<FindPage, String> {
     let shown = query.offset + page.matches.len();
     page.next = (shown < page.total).then_some(shown);
     Ok(page)
+}
+
+fn read_text(path: &Path) -> Result<Option<String>, String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidData => Ok(None),
+        Err(error) => Err(format!("reading {}: {error}", path.display())),
+    }
 }
 
 /// Counts in-scope hits and selects this file's portion of the requested page.
@@ -186,18 +195,27 @@ fn files(query: &FindQuery) -> Result<Vec<PathBuf>, String> {
             found.push(root.clone());
             continue;
         }
-        let mut walk = WalkBuilder::new(root);
-        walk.overrides(overrides(root, &query.globs)?);
-        found.extend(
-            walk.build()
-                .filter_map(Result::ok)
-                .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_file()))
-                .map(ignore::DirEntry::into_path),
-        );
+        collect_directory(root, &query.globs, &mut found)?;
     }
     found.sort();
     found.dedup();
     Ok(found)
+}
+
+fn collect_directory(
+    root: &Path,
+    globs: &[String],
+    found: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    let mut walk = WalkBuilder::new(root);
+    walk.overrides(overrides(root, globs)?);
+    for entry in walk.build() {
+        let entry = entry.map_err(|error| format!("walking: {error}"))?;
+        if entry.file_type().is_some_and(|kind| kind.is_file()) {
+            found.push(entry.into_path());
+        }
+    }
+    Ok(())
 }
 
 fn overrides(root: &Path, globs: &[String]) -> Result<ignore::overrides::Override, String> {
