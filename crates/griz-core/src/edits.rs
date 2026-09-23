@@ -76,7 +76,9 @@ pub fn replace_anchor(
     check_anchor(spec.anchor)?;
     let text = text_of(slot)?;
     let chosen = choose(text, locate(text, spec.anchor), spec.occurrence)?;
+    check_overlaps(text, &chosen)?;
     let many = chosen.len() > 1;
+    let mut position = find_position::Cursor::default();
     let edits: Vec<_> = chosen
         .iter()
         .enumerate()
@@ -90,16 +92,14 @@ pub fn replace_anchor(
                 id,
                 index,
                 path,
-                line_of(text, found.range.start),
+                find_position::position(&mut position, text, found.range.start).0,
                 found.rung,
             )
         })
         .collect();
-    let mut next = text.to_string();
-    for found in chosen.iter().rev() {
-        let with = replacement(spec.replace, found);
-        next = splice(&next, found.range, &with);
-        slot.log.record(found.range, with.len());
+    let (next, lengths) = replaced_text(text, &chosen, spec.replace);
+    for (found, new_len) in chosen.iter().zip(lengths).rev() {
+        slot.log.record(found.range, new_len);
     }
     slot.current = Some(next);
     Ok(edits)
@@ -186,6 +186,36 @@ fn choose(text: &str, located: Located, occurrence: Occurrence) -> Result<Vec<Fo
                 message: format!("occurrence {n} requested but {} matched", found.len()),
             }),
     }
+}
+
+fn check_overlaps(text: &str, chosen: &[Found]) -> Result<(), ProblemKind> {
+    if !chosen
+        .windows(2)
+        .any(|pair| pair[0].range.end > pair[1].range.start)
+    {
+        return Ok(());
+    }
+    let mut position = find_position::Cursor::default();
+    let lines = chosen
+        .iter()
+        .map(|found| find_position::position(&mut position, text, found.range.start).0)
+        .collect();
+    Err(ProblemKind::Ambiguous { lines })
+}
+
+fn replaced_text(text: &str, chosen: &[Found], replace: &str) -> (String, Vec<usize>) {
+    let mut next = String::with_capacity(text.len());
+    let mut lengths = Vec::with_capacity(chosen.len());
+    let mut start = 0;
+    for found in chosen {
+        let with = replacement(replace, found);
+        next.push_str(&text[start..found.range.start]);
+        next.push_str(&with);
+        lengths.push(with.len());
+        start = found.range.end;
+    }
+    next.push_str(&text[start..]);
+    (next, lengths)
 }
 
 fn replacement(replace: &str, found: &Found) -> String {

@@ -1,5 +1,6 @@
 //! Behavior of the pure edit engine.
 
+mod anchor_bulk;
 mod bulk_plan;
 mod common;
 mod definition_scopes;

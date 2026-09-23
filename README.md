@@ -69,7 +69,9 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   Only exact matches and find ranges are `machine` confidence; `apply` refuses
   `maybe` edits unless asked, and `select` can keep only the exact ones.
 - **Ambiguity is an error.** An anchor matching twice reports every candidate
-  line instead of taking the first.
+  line instead of taking the first. Selecting `occurrence: "all"` also refuses
+  overlapping tolerant matches and lists their lines; select one occurrence or
+  narrow the anchor.
 - **Misses show the real text.** A missed anchor records the nearest real window
   of the file, readable with `get`.
 - **Undo never clobbers.** Undo restores only files still exactly as the
