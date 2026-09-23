@@ -1,8 +1,8 @@
-//! Publishes `plan`'s MCP input schema, typed from [`Op`] and
-//! [`WorkspaceEdit`] instead of hand-derived, so a new field on either shows
-//! up here automatically.
+//! Publishes `plan`'s MCP input schema from CLI option metadata and typed edits.
+//! Edit definitions stay local to the published schema.
 
 use griz_core::{Op, WorkspaceEdit};
+use incurs::schema::{IncurSchema, to_json_schema};
 use serde_json::{Map, Value, json};
 
 /// The typed schema for `plan`'s `ops`, `workspace_edit`, and plain options.
@@ -10,59 +10,31 @@ use serde_json::{Map, Value, json};
 /// `ByteRange`, `Occurrence`, `PatternLocator`, `TextEdit`, ...) are hoisted
 /// to this schema's own root so every `$ref` resolves within the published
 /// document.
-pub fn plan_input_schema() -> Value {
+pub fn plan_input_schema<Options: IncurSchema>() -> Value {
+    let mut schema = option_schema::<Options>();
     let (op_schema, op_defs) = schema_and_defs::<Op>();
     let (edit_schema, edit_defs) = schema_and_defs::<WorkspaceEdit>();
     let mut defs = op_defs;
     defs.extend(edit_defs);
-    json!({
-        "type": "object",
-        "properties": {
-            "ops": {
-                "type": "array",
-                "description": "Operations as JSON objects, applied in order. Each is a replace, insert, create, delete, or move (or JSON text for CLI callers).",
-                "items": {
-                    "oneOf": [op_schema, { "type": "string" }],
-                },
-            },
-            "patch": {
-                "type": "string",
-                "description": "Codex patch text, or `@path` to read the patch from a file.",
-            },
-            "workspace_edit": edit_schema,
-            "position_encoding": {
-                "type": "string",
-                "enum": ["utf-8", "utf-16", "utf-32"],
-                "description": "How workspace_edit positions count into a line. Defaults to utf-16.",
-            },
-            "root": {
-                "type": "string",
-                "description": "Directory relative paths resolve from. Defaults to the current directory.",
-            },
-            "purpose": {
-                "type": "string",
-                "description": "Why this plan is being made.",
-            },
-            "idempotency_key": {
-                "type": "string",
-                "description": "Key that makes a retry return the original plan instead of a new one.",
-            },
-            "expect_edits": {
-                "type": "number",
-                "description": "Number of edits the plan must contain.",
-            },
-            "expect_files": {
-                "type": "number",
-                "description": "Number of files the plan must change.",
-            },
-            "verbosity": {
-                "type": "string",
-                "description": "Response detail: off, error, warn, info, debug, or trace.",
-            },
-        },
-        "required": ["purpose", "idempotency_key"],
-        "$defs": defs,
-    })
+    let properties = &mut schema["properties"];
+    properties["ops"] = json!({
+        "type": "array",
+        "description": "Operations as JSON objects, applied in order. Each is a replace, insert, create, delete, or move (or JSON text for CLI callers).",
+        "items": { "oneOf": [op_schema, { "type": "string" }] },
+    });
+    properties["workspace_edit"] = edit_schema;
+    properties["position_encoding"]["enum"] = json!(["utf-8", "utf-16", "utf-32"]);
+    properties["expect_syntax"]["enum"] = json!(["clean"]);
+    schema["$defs"] = json!(defs);
+    schema
+}
+
+fn option_schema<Options: IncurSchema>() -> Value {
+    let mut fields = Options::fields();
+    for field in &mut fields {
+        field.cli_name = field.name.to_owned();
+    }
+    to_json_schema(&fields)
 }
 
 /// A type's schema with `$defs`/`$schema` split off, ready to nest under a

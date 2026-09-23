@@ -64,7 +64,7 @@ pub fn plan_command() -> CommandDef {
     .examples(crate::usage::example("--root /path/to/repo --ops @edits.json --expect-edits 1 --expect-files 1 --purpose \"Plan edit\" --idempotency-key edit-plan --format json", "Plan one edit from JSON."))
     .hint(crate::usage::MUTATION)
     .mcp(annotations::records())
-    .mcp_input_schema(plan_input_schema())
+    .mcp_input_schema(plan_input_schema::<PlanOptions>())
     .done()
 }
 

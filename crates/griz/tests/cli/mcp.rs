@@ -2,6 +2,7 @@
 
 mod addressing;
 mod edit_input;
+mod plan_schema;
 mod search_errors;
 mod transport;
 
