@@ -81,18 +81,33 @@ def plan_edit(options):
             "reason": "find did not return the complete expected page", "response": found,
         })
     try:
-        ops = [{
-            "op": "replace", "path": match["path"], "range": match["range"],
-            "find": {"text": match["text"]}, "replace": options.replace,
-            "expect_hash": match["file_hash"],
-        } for match in matches]
-        file_count = len({op["path"] for op in ops})
-    except (KeyError, TypeError) as error:
+        ops = file_operations(options, matches)
+        file_count = len(ops)
+    except (KeyError, TypeError, ValueError) as error:
         raise CommandFailure({
             "stage": "find", "outcome": "error",
             "reason": "find returned malformed matches", "response": found,
         }) from error
     return plan_from_ops(options, ops, file_count), file_count
+
+
+def file_operations(options, matches):
+    fingerprints = {}
+    for match in matches:
+        path, fingerprint = match["path"], match["file_hash"]
+        if not isinstance(path, str) or not path:
+            raise ValueError("match path is empty or invalid")
+        if not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+            raise ValueError("match fingerprint is missing or invalid")
+        if match["text"] != options.literal:
+            raise ValueError("match text differs from the requested literal")
+        if path in fingerprints and fingerprints[path] != fingerprint:
+            raise ValueError("one file has inconsistent fingerprints")
+        fingerprints[path] = fingerprint
+    return [{
+        "op": "replace", "path": path, "find": {"text": options.literal},
+        "replace": options.replace, "occurrence": "all", "expect_hash": fingerprint,
+    } for path, fingerprint in fingerprints.items()]
 
 
 def plan_from_ops(options, ops, file_count):

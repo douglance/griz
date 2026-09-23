@@ -196,8 +196,10 @@ the process fails or its response is malformed, including errors without an ID.
 
 [The guarded CLI example](crates/griz/examples/guarded_cli.py) uses Python's
 standard library and exact argument arrays to find, plan, apply, check, and
-report a guarded undo after a failed check. It never starts the check after a
-refused apply. Run it under apoc to supervise the whole attempt:
+report a guarded undo after a failed check. A complete literal search becomes
+one `occurrence: "all"` operation per file, retaining its fingerprint and the
+total expected edit count. Conflicting or missing fingerprints are refused.
+It never starts the check after a refused apply. Run it under apoc to supervise the whole attempt:
 
 ```sh
 apoc execution start python3 --purpose "Rename and check" --idempotency-key rename-attempt-1 --expect-exit-code 0 -- /path/to/griz/crates/griz/examples/guarded_cli.py --root /path/to/repo --path "src one.rs" --path "src two.rs" --literal oldName --replace new_name --expected-matches 12 --key rename-attempt-1 --check cargo check

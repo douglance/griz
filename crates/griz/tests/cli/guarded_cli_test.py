@@ -91,7 +91,9 @@ class WorkflowTests(unittest.TestCase):
                 payload = Path(argument[1:])
                 staged.append(payload)
                 operations = json.loads(payload.read_text())
-                self.assertEqual(len(operations), 128)
+                self.assertEqual(len(operations), 1)
+                self.assertEqual(operations[0]["occurrence"], "all")
+                self.assertNotIn("range", operations[0])
                 self.assertTrue(all(op["expect_hash"] for op in operations))
                 self.assertLess(sum(len(arg.encode()) for arg in argv), 4096)
         result = self.workflow(intercept)
@@ -120,6 +122,79 @@ class WorkflowTests(unittest.TestCase):
             result = self.workflow()
         self.assert_stopped(result, "plan", ["find"])
         self.assertIn("no space for input", result["reason"])
+
+
+    def test_grouped_edits_keep_independent_file_hashes(self):
+        self.file.write_text("oldName\n" * 3)
+        second = self.root / "second.txt"
+        second.write_text("é\noldName\noldName\n")
+        self.options.path.append(second.name)
+        self.options.expected_matches = 5
+        def intercept(stage, argv, kwargs):
+            if stage == "plan":
+                payload = Path(argv[argv.index("--ops") + 1][1:])
+                operations = json.loads(payload.read_text())
+                self.assertEqual(len(operations), 2)
+                self.assertEqual(len({op["expect_hash"] for op in operations}), 2)
+                self.assertTrue(all(op["occurrence"] == "all" for op in operations))
+                self.assertEqual(argv[argv.index("--expect-edits") + 1], "5")
+        result = self.workflow(intercept)
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(self.file.read_text(), "new_name\n" * 3)
+        self.assertEqual(second.read_text(), "é\nnew_name\nnew_name\n")
+
+    def test_grouped_plan_refuses_changes_after_find(self):
+        def intercept(stage, argv, kwargs):
+            if stage == "plan":
+                self.file.write_text("oldName\noutside\n")
+        result = self.workflow(intercept)
+        self.assertEqual(result["stage"], "plan", result)
+        self.assertEqual(result["outcome"], "error", result)
+        self.assertEqual(self.calls, ["find", "plan"])
+        self.assertEqual(self.file.read_text(), "oldName\noutside\n")
+        self.assertFalse(self.marker.exists())
+
+    def test_grouping_refuses_inconsistent_fingerprints(self):
+        self.file.write_text("oldName\n" * 2)
+        self.options.expected_matches = 2
+        def intercept(stage, argv, kwargs):
+            if stage == "find":
+                output = REAL_RUN(argv, **kwargs)
+                body = json.loads(output.stdout)
+                body["matches"][1]["file_hash"] = "f" * 64
+                output.stdout = json.dumps(body)
+                return output
+        result = self.workflow(intercept)
+        self.assertEqual(result["stage"], "find", result)
+        self.assertEqual(result["outcome"], "error", result)
+        self.assertEqual(self.calls, ["find"])
+        self.assertEqual(self.file.read_text(), "oldName\n" * 2)
+        self.assertFalse(self.marker.exists())
+
+    def test_grouping_refuses_unexpected_match_text(self):
+        def intercept(stage, argv, kwargs):
+            if stage == "find":
+                output = REAL_RUN(argv, **kwargs)
+                body = json.loads(output.stdout)
+                body["matches"][0]["text"] = "different"
+                output.stdout = json.dumps(body)
+                return output
+        result = self.workflow(intercept)
+        self.assert_stopped(result, "find", ["find"])
+
+    def test_grouping_requires_a_valid_fingerprint(self):
+        for fingerprint in (None, "", "not-a-hash", [], "A" * 64):
+            with self.subTest(fingerprint=fingerprint):
+                self.calls.clear()
+                def intercept(stage, argv, kwargs):
+                    if stage == "find":
+                        output = REAL_RUN(argv, **kwargs)
+                        body = json.loads(output.stdout)
+                        body["matches"][0]["file_hash"] = fingerprint
+                        output.stdout = json.dumps(body)
+                        return output
+                result = self.workflow(intercept)
+                self.assert_stopped(result, "find", ["find"])
 
     def test_successful_check_output_is_compact(self):
         self.options.check = [sys.executable, "-c",
