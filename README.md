@@ -221,12 +221,31 @@ It never starts the check after a refused apply. Run it under apoc to supervise 
 apoc execution start python3 --purpose "Rename and check" --idempotency-key rename-attempt-1 --expect-exit-code 0 -- /path/to/griz/crates/griz/examples/guarded_cli.py --root /path/to/repo --path "src one.rs" --path "src two.rs" --literal oldName --replace new_name --expected-matches 12 --key rename-attempt-1 --check cargo check
 ```
 
-For a fully specified literal edit, run this recipe directly. It performs the
-match-count, fingerprint, and syntax checks before applying and runs the supplied
-check once. Use `--help` for argument details. A passed receipt already includes
-the check result; avoid dumping the helper source or adding another copy of its
-checks on the successful path. Inspect the implementation when diagnosing a
-reported failure or when the requested transformation needs different behavior.
+The same helper accepts `--regex` or `--pattern` instead of `--literal`.
+Use `--replace` for constant text, or `--transform transform.py` for caller-owned
+Python defining `replace(match) -> str`. `--transform -` reads the program from
+stdin. For example, with `--pattern 'legacy($ARG)'`, the caller can supply:
+
+```python
+def replace(match):
+    return "modern(" + match["vars"]["ARG"] + ")"
+```
+
+Structural matching leaves member calls, comments, and strings alone. For JSON,
+use `--regex '(?s)\A.*\z'` to match whole files, parse `match["text"]`, change
+the selected values, and return the serialized text. Regex captures are in
+`match["captures"]`, with group 1 at index 0. The helper retains each original
+byte range and fingerprint even if the function modifies its match dictionary.
+All replacements are computed before planning. A transform error stops before
+apply; a failed check uses the same guarded undo as a literal edit. The function
+runs as caller code: return text instead of writing source files. Diagnostic
+prints go to stderr so stdout remains the receipt.
+
+Run this recipe directly for these edits. It checks the match count, fingerprints,
+and planned syntax, then runs the supplied check once. Use `--help` for arguments.
+A passed receipt already includes the check result; do not read the helper source
+or repeat its checks on the successful path. Inspect the implementation when
+diagnosing a reported failure.
 
 Put `--check` last: everything after it is the check's executable and arguments.
 Use a stable key for an attempt; a different edit needs a new key. The example

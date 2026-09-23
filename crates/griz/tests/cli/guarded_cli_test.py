@@ -401,6 +401,154 @@ class WorkflowTests(unittest.TestCase):
         self.assert_stopped(result, "find", ["find"])
         self.assertEqual(result["response"], body)
 
+    def transform_cli(self, selector, source, count=1, check=None):
+        return REAL_RUN([
+            sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+            "--root", str(self.root), "--path", self.file.name,
+            *selector, "--transform", "-", "--expected-matches", str(count),
+            "--key", "transform", "--check", *(check or self.options.check),
+        ], input=source, capture_output=True, text=True)
+
+    def test_structural_transform_preserves_decoys_and_unicode(self):
+        self.file = self.root / "client file.ts"
+        before = ('// é legacy(0)\nconst a = legacy("é");\n'
+                  'const b = obj.legacy(1);\nconst note = "legacy(2)";\n'
+                  'const c = legacy(1 + 2);\n')
+        self.file.write_text(before)
+        result = self.transform_cli(
+            ["--pattern", "legacy($ARG)"],
+            "def replace(match):\n    return 'modern(' + match['vars']['ARG'] + ')'\n",
+            count=2,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["outcome"], "passed")
+        self.assertEqual(self.file.read_text(),
+                         '// é legacy(0)\nconst a = modern("é");\n'
+                         'const b = obj.legacy(1);\nconst note = "legacy(2)";\n'
+                         'const c = modern(1 + 2);\n')
+        self.assertTrue(self.marker.exists())
+
+    def test_json_transform_preserves_unrelated_values(self):
+        self.file = self.root / "services with spaces.json"
+        self.file.write_text('{"timeout": 30, "retries": 2, "note": "é"}\n')
+        source = ("import json\n"
+                  "def replace(match):"
+                  "\n    value = json.loads(match['text'])\n"
+                  "    value['timeout'] = 60\n"
+                  "    value['retries'] += 1\n"
+                  "    return json.dumps(value, ensure_ascii=False, indent=2) + '\\n'\n")
+        result = self.transform_cli(["--regex", r"(?s)\A.*\z"], source)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.file.read_text(),
+                         '{\n  "timeout": 60,\n  "retries": 3,\n  "note": "é"\n}\n')
+
+    def test_late_transform_failure_writes_nothing(self):
+        self.file.write_text("oldName oldName\n")
+        source = ("def replace(match):\n"
+                  "    if match['range']['start'] > 0:\n"
+                  "        raise ValueError('second match rejected')\n"
+                  "    return 'new_name'\n")
+        result = self.transform_cli(["--literal", "oldName"], source, count=2)
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["stage"], "transform", report)
+        self.assertIn("second match rejected", report["reason"])
+        self.assertEqual(self.file.read_text(), "oldName oldName\n")
+        self.assertFalse(self.marker.exists())
+
+    def test_transform_errors_are_structured_and_write_nothing(self):
+        for source in ("def broken(", "replace = 3\n",
+                       "def replace(match):\n    return None\n",
+                       "def replace(match):\n    return 5\n"):
+            with self.subTest(source=source):
+                result = self.transform_cli(["--literal", "oldName"], source)
+                self.assertNotEqual(result.returncode, 0)
+                report = json.loads(result.stdout)
+                self.assertEqual(report["stage"], "transform", report)
+                self.assertEqual(report["outcome"], "error", report)
+                self.assertEqual(self.file.read_text(), "oldName\n")
+                self.assertFalse(self.marker.exists())
+
+    def test_transform_keeps_the_found_fingerprint(self):
+        source = ("from pathlib import Path\n"
+                  "def replace(match):\n"
+                  f"    Path({str(self.file)!r}).write_text('oldName\\noutside edit\\n')\n"
+                  "    return 'new_name'\n")
+        result = self.transform_cli(["--literal", "oldName"], source)
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["stage"], "plan", report)
+        self.assertEqual(self.file.read_text(), "oldName\noutside edit\n")
+        self.assertFalse(self.marker.exists())
+
+    def test_transform_check_failure_restores_preexisting_content(self):
+        self.file.write_text("# user's note\noldName\n")
+        result = self.transform_cli(
+            ["--regex", "(old)Name"],
+            "def replace(match):\n    return match['captures'][0] + '_new'\n",
+            check=[sys.executable, "-c", "raise SystemExit(7)"],
+        )
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["check"]["exit_code"], 7)
+        self.assertEqual(report["undo"]["outcome"], "passed", report)
+        self.assertEqual(self.file.read_text(), "# user's note\noldName\n")
+
+    def test_transform_file_keeps_stdout_as_one_receipt(self):
+        transform = self.root / "transform with spaces.py"
+        transform.write_text("print('loaded')\ndef replace(match):\n"
+                             "    print('transforming')\n    return 'new_name'\n")
+        result = REAL_RUN([
+            sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+            "--root", str(self.root), "--path", self.file.name,
+            "--literal", "oldName", "--transform", str(transform),
+            "--expected-matches", "1", "--key", "file-transform", "--check",
+            *self.options.check,
+        ], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["outcome"], "passed")
+        self.assertIn("loaded", result.stderr)
+        self.assertIn("transforming", result.stderr)
+        self.assertEqual(self.file.read_text(), "new_name\n")
+
+    def test_regex_constant_replacement_and_language_selection(self):
+        self.file = self.root / "sample file.ts"
+        for query, before, expected in (
+            (["--regex", r"oldN\w+"], "oldName\n", "new_name\n"),
+            (["--pattern", "legacy($ARG)", "--language", "typescript"],
+             "const a = legacy(1);\n", "const a = new_name;\n"),
+        ):
+            with self.subTest(query=query):
+                self.file.write_text(before)
+                result = REAL_RUN([
+                    sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+                    "--root", str(self.root), "--path", self.file.name,
+                    *query, "--replace", "new_name", "--expected-matches", "1",
+                    "--key", "selector-" + query[0], "--check", *self.options.check,
+                ], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.file.read_text(), expected)
+
+    def test_transform_cannot_retarget_its_match(self):
+        source = ("def replace(match):\n"
+                  "    match['path'] = 'wrong.txt'\n"
+                  "    match['range']['start'] = 99\n"
+                  "    match['file_hash'] = None\n"
+                  "    match['text'] = 'wrong'\n"
+                  "    return 'new_name'\n")
+        result = self.transform_cli(["--literal", "oldName"], source)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.file.read_text(), "new_name\n")
+        self.assertFalse((self.root / "wrong.txt").exists())
+
+    def test_transform_keeps_unchanged_matches_valid(self):
+        self.file.write_text("oldName unchanged\n")
+        source = ("def replace(match):\n"
+                  "    return 'new_name' if match['text'] == 'oldName' else match['text']\n")
+        result = self.transform_cli(["--regex", r"oldName|unchanged"], source, count=2)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.file.read_text(), "new_name unchanged\n")
+
     def mcp(self, name, arguments):
         messages = [
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {

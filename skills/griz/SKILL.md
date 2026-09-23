@@ -49,13 +49,19 @@ on failure. An error may have no ID; a failed plan may have an inspection ID.
 A shell pipeline that extracts only `id` can conceal the producer's failure.
 Use exact argument arrays rather than composing a command string.
 
-For a fully specified literal edit, run the repository's
-`crates/griz/examples/guarded_cli.py` directly. It performs the match-count,
-fingerprint, and syntax checks before applying and runs the supplied check once.
-Use `--help` for arguments. A passed receipt includes the check result; avoid
-dumping the helper source or adding another copy of its checks on the successful
-path. Inspect the implementation when diagnosing a reported failure or when the
-transformation needs different behavior.
+For CLI work, use the repository's `crates/griz/examples/guarded_cli.py` to
+compose find, plan, apply, check, and failed-check undo in one call. Select
+`--literal`, `--regex`, or `--pattern`; supply `--replace` for constant text or
+`--transform FILE` for caller Python defining `replace(match) -> str`.
+`--transform -` reads that Python from stdin, so an inline program needs no file.
+The match exposes `text`, structural `vars`, regex `captures` (group 1 at index
+0), `path`, and byte `range`. Return replacement text; do not write source files
+from the transform. For whole JSON files, use `--regex '(?s)\A.*\z'` and
+parse/serialize `match["text"]` in the function. Count the complete expected
+matches with `--expected-matches`; put the check command after `--check` last.
+Use `--help` for arguments, not a source dump. A passed receipt already includes
+the check result. Read the implementation only to diagnose a reported failure.
+If this skill is already loaded, do not read an identical copied guide.
 
 The helper checks process status, JSON shape, verdict, and returned IDs; on check
 failure it reports the original output and the undo verdict. Run it with

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replace a known literal with one guarded find/plan/apply/check workflow.
+"""Replace matches with one guarded find/plan/apply/check workflow.
 
 Checks the exact match count, file fingerprints, and planned syntax before
 applying, then runs the supplied check once. A passed outcome means the edit
@@ -11,6 +11,8 @@ Use --help for arguments; inspect this implementation when debugging the helper.
 """
 
 import argparse
+from contextlib import redirect_stdout
+from copy import deepcopy
 import json
 from pathlib import Path
 import re
@@ -80,10 +82,68 @@ def mutation_options(options, stage):
     ]
 
 
-def plan_edit(options):
+def query_arguments(options):
+    selected = [(name, getattr(options, name, None))
+                for name in ("literal", "regex", "pattern")
+                if getattr(options, name, None) is not None]
+    if len(selected) != 1 or not selected[0][1]:
+        raise CommandFailure({
+            "stage": "find", "outcome": "error",
+            "reason": "give exactly one nonempty literal, regex, or pattern",
+        })
+    name, value = selected[0]
+    arguments = ["--" + name, value]
+    if getattr(options, "language", None):
+        arguments.extend(["--language", options.language])
+    return arguments
+
+
+def load_transform(path):
+    if path is None:
+        return None
+    try:
+        text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
+        namespace = {"__name__": "griz_transform", "__file__": path}
+        with redirect_stdout(sys.stderr):
+            exec(compile(text, "<stdin>" if path == "-" else path, "exec"), namespace)
+        transform = namespace.get("replace")
+        if not callable(transform):
+            raise ValueError("transform must define replace(match)")
+        return transform
+    except Exception as error:
+        raise CommandFailure({
+            "stage": "transform", "outcome": "error", "reason": str(error),
+        }) from error
+
+
+def transformed_operation(options, match, transform):
+    span = match["range"]
+    if (not isinstance(span, dict)
+            or type(span.get("start")) is not int or type(span.get("end")) is not int
+            or span["start"] < 0 or span["end"] < span["start"]
+            or span["end"] - span["start"] != len(match["text"].encode("utf-8"))):
+        raise ValueError("match byte range is invalid")
+    operation = {
+        "op": "replace", "path": match["path"], "range": dict(span),
+        "find": {"text": match["text"]}, "expect_hash": match["file_hash"],
+    }
+    try:
+        with redirect_stdout(sys.stderr):
+            replacement = transform(deepcopy(match)) if transform else options.replace
+        if not isinstance(replacement, str):
+            raise TypeError("replace(match) must return a string")
+    except Exception as error:
+        raise CommandFailure({
+            "stage": "transform", "outcome": "error",
+            "path": match["path"], "reason": str(error),
+        }) from error
+    return {**operation, "replace": replacement}
+
+
+def plan_edit(options, transform=None):
     paths = [arg for path in options.path for arg in ("--paths", path)]
     found = griz_command(options, "find", [
-        "--root", options.root, *paths, "--literal", options.literal,
+        "--root", options.root, *paths, *query_arguments(options),
         "--limit", str(options.expected_matches),
         "--expect-matches", str(options.expected_matches),
     ])
@@ -94,8 +154,8 @@ def plan_edit(options):
             "reason": "find did not return the complete expected page", "response": found,
         })
     try:
-        ops = file_operations(options, matches)
-        file_count = len(ops)
+        ops = file_operations(options, matches, transform)
+        file_count = len({op["path"] for op in ops})
     except (KeyError, TypeError, ValueError) as error:
         raise CommandFailure({
             "stage": "find", "outcome": "error",
@@ -104,7 +164,7 @@ def plan_edit(options):
     return plan_from_ops(options, ops, file_count), file_count
 
 
-def file_operations(options, matches):
+def file_operations(options, matches, transform=None):
     fingerprints = {}
     for match in matches:
         path, fingerprint = match["path"], match["file_hash"]
@@ -112,11 +172,15 @@ def file_operations(options, matches):
             raise ValueError("match path is empty or invalid")
         if not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
             raise ValueError("match fingerprint is missing or invalid")
-        if match["text"] != options.literal:
+        if not isinstance(match["text"], str):
+            raise ValueError("match text is invalid")
+        if getattr(options, "literal", None) is not None and match["text"] != options.literal:
             raise ValueError("match text differs from the requested literal")
         if path in fingerprints and fingerprints[path] != fingerprint:
             raise ValueError("one file has inconsistent fingerprints")
         fingerprints[path] = fingerprint
+    if transform is not None or getattr(options, "literal", None) is None:
+        return [transformed_operation(options, match, transform) for match in matches]
     return [{
         "op": "replace", "path": path, "find": {"text": options.literal},
         "replace": options.replace, "occurrence": "all", "expect_hash": fingerprint,
@@ -152,8 +216,8 @@ def check_report(options, check):
     return report
 
 
-def edit_and_check(options):
-    plan, file_count = plan_edit(options)
+def edit_and_check(options, transform=None):
+    plan, file_count = plan_edit(options, transform)
     applied = griz_command(options, "apply", [
         plan["id"], "--expect-files", str(file_count),
         *mutation_options(options, "apply"),
@@ -181,7 +245,7 @@ def edit_and_check(options):
 
 def run(options):
     try:
-        return edit_and_check(options)
+        return edit_and_check(options, load_transform(getattr(options, "transform", None)))
     except CommandFailure as error:
         return error.report
 
@@ -191,8 +255,16 @@ def parse_options():
     parser.add_argument("--root", required=True)
     parser.add_argument("--path", action="append", required=True,
                         help="One file or directory; repeat for more paths.")
-    parser.add_argument("--literal", required=True)
-    parser.add_argument("--replace", required=True)
+    query = parser.add_mutually_exclusive_group(required=True)
+    query.add_argument("--literal", help="Exact text to match.")
+    query.add_argument("--regex", help="Regex to match; captures are available to a transform.")
+    query.add_argument("--pattern", help="Structural pattern, such as legacy($ARG).")
+    parser.add_argument("--language", help="Restrict structural matching to files in this language.")
+    replacement = parser.add_mutually_exclusive_group(required=True)
+    replacement.add_argument("--replace", help="Literal replacement text.")
+    replacement.add_argument("--transform", metavar="FILE",
+                             help="Caller Python defining replace(match) -> str; - reads stdin. "
+                                  "Return text only. Match has text, vars, captures, path, and byte range.")
     parser.add_argument("--expected-matches", required=True, type=int)
     parser.add_argument("--key", required=True,
                         help="Stable identity for this attempt; new edits need new keys.")
@@ -202,8 +274,10 @@ def parse_options():
     parser.add_argument("--check", nargs=argparse.REMAINDER, required=True,
                         help="Check executable and exact arguments; put this option last.")
     options = parser.parse_args()
-    if options.expected_matches < 1 or not options.literal or not options.check:
-        parser.error("give a nonempty literal, positive match count, and check command")
+    if options.expected_matches < 1 or not options.check:
+        parser.error("give a positive match count and check command")
+    if any(value == "" for value in (options.literal, options.regex, options.pattern, options.transform)):
+        parser.error("give a nonempty query and transform path")
     options.root = str(Path(options.root).resolve())
     return options
 
