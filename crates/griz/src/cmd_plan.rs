@@ -61,6 +61,8 @@ pub fn plan_command() -> CommandDef {
         |ctx: TypedContext<(), PlanOptions, ()>| async move { respond(plan(ctx.options).await) },
     )
     .description("Plan edits from operations or patch text. Writes no source file; returns a plan id for diff, select, and apply.")
+    .examples(crate::usage::example("--root /path/to/repo --ops @edits.json --expect-edits 1 --expect-files 1 --purpose \"Plan edit\" --idempotency-key edit-plan --format json", "Plan one edit from JSON."))
+    .hint(crate::usage::MUTATION)
     .mcp(annotations::records())
     .mcp_input_schema(plan_input_schema())
     .done()
@@ -151,6 +153,8 @@ pub fn select_command() -> CommandDef {
         },
     )
     .description("Make a new plan from part of another: by path, edit id, or confidence. Enables partial apply and partial undo.")
+    .examples(crate::usage::example("PLAN --root /path/to/repo --paths \"src one.rs\" --paths \"src two.rs\" --purpose \"Select files\" --idempotency-key edit-select --format json", "Select files from a saved plan."))
+    .hint("CLI: PLAN is positional. Repeat --paths and --edits for multiple values. Check exit status and outcome == passed before using the new id.")
     .mcp(annotations::records())
     .done()
 }

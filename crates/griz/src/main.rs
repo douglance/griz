@@ -17,6 +17,7 @@ mod plan_input;
 mod plan_schema;
 mod receipt;
 mod render;
+mod usage;
 mod verdict;
 
 use incurs::{

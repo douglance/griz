@@ -29,6 +29,32 @@ Stop the program when a declared expectation fails. A failed plan still has an
 id for inspection; passing that id to `apply` does not carry the plan's count or
 syntax expectations into the apply. Set `root` to the repository's absolute path.
 
+## CLI spelling and failure handling
+
+| Task | CLI | MCP |
+|---|---|---|
+| Apply | `griz apply PLAN --purpose ... --idempotency-key ... --format json` | `griz.apply({ plan, purpose, idempotency_key })` |
+| Undo | `griz undo OP --root ROOT --purpose ... --idempotency-key ... --format json` | `griz.undo({ root, operation, purpose, idempotency_key })` |
+| Multiple paths | `--paths 'src one.rs' --paths 'src two.rs'` | `paths: ["src one.rs", "src two.rs"]` |
+| Full record | `griz get ID --format json` | `griz.get({ id })` |
+
+CLI IDs are positional: `apply PLAN`, not `apply --plan PLAN`.
+Repeat `--paths` for each value; a JSON array string is a literal path.
+`get` already returns the full record and accepts neither `--purpose` nor
+`--verbosity`. Quote paths with spaces.
+
+A CLI program must check both process exit status and the parsed
+`outcome == "passed"` before taking an ID or advancing. Retain stdout and stderr
+on failure. An error may have no ID; a failed plan may have an inspection ID.
+A shell pipeline that extracts only `id` can conceal the producer's failure.
+Use exact argument arrays rather than composing a command string.
+
+The repository's `crates/griz/examples/guarded_cli.py` is a runnable example.
+It checks process status, JSON shape, verdict, and returned IDs; on check failure
+it reports the original output and the undo verdict. Run it with
+`apoc execution start python3 ... -- /path/to/guarded_cli.py ...` so an unfinished
+check retains a durable execution ID. See the README for the complete invocation.
+
 ## Edit exactly what you found
 
 ```js
@@ -73,7 +99,7 @@ return { ...result, undo: undone };
 ```
 
 To keep the parts that passed, undo only the failing files with
-`griz.undo({ operation, paths })`, or build a smaller plan with
+`griz.undo({ root, operation, paths })`, or build a smaller plan with
 `select` with `paths`, `edits`, or `min_confidence` and apply that.
 
 ## Match by shape
@@ -115,7 +141,7 @@ changed by someone else can prevent restoration.
 
 ## Formatters
 
-Run the formatter after `apply`, then `griz.absorb({ operation, purpose,
+Run the formatter after `apply`, then `griz.absorb({ root, operation, purpose,
 idempotency_key })`. Undo then restores the text from before the apply instead
 of refusing the reformatted files. `absorb` takes any later change to the
 written files, not only a formatter's, so run it right after the formatter,
@@ -135,7 +161,7 @@ Replace a file's whole contents with
 
 Anchors match exactly, then ignoring trailing whitespace, then by relative
 indentation, then trimmed. Anything but exact is `maybe`, and `apply` refuses it
-unless `min_confidence: "maybe"`. Prefer `select({ min_confidence: "machine" })`
+unless `min_confidence: "maybe"`. Prefer `select({ root, min_confidence: "machine" })`
 and a second look at the rest.
 
 ## Files changed by someone else
@@ -152,7 +178,7 @@ replace guarded by `current_fingerprint`.
 
 ## Rewind an attempt
 
-`griz.undo({ since: firstOp, purpose, idempotency_key })` restores every
+`griz.undo({ root, since: firstOp, purpose, idempotency_key })` restores every
 operation from `firstOp` through the newest as one operation. It refuses when a
 file's history was changed outside griz in between; leave such files out with
 `paths`. Undo the restore to go forward again.

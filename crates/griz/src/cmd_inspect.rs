@@ -58,6 +58,8 @@ pub fn diff_command() -> CommandDef {
         },
     )
     .description("Unified diff of a plan or an operation, with per-file line counts. Address long diffs with grep or lines.")
+    .examples(crate::usage::example("PLAN --root /path/to/repo --lines 1-80 --format json", "Inspect a saved plan or operation."))
+    .hint("CLI: the id is positional. Use --lines or --grep to address output; diff does not take --purpose or --verbosity.")
     .mcp(annotations::read_only())
     .done()
 }
@@ -168,6 +170,8 @@ pub fn log_command() -> CommandDef {
         },
     )
     .description("Operations newest first: every apply and undo with its state and file count. Narrow to one tree with paths.")
+    .examples(crate::usage::example("--root /path/to/repo --paths . --format json", "Read this project history."))
+    .hint(crate::usage::PATHS)
     .mcp(annotations::read_only())
     .done()
 }
@@ -201,6 +205,8 @@ pub fn get_command() -> CommandDef {
         },
     )
     .description("The complete record of a plan or operation, including problems and the nearest real text for any anchor that missed. A blob_ prefixed id, as a merge conflict's base, planned, or current fields carry, returns that text instead.")
+    .examples(crate::usage::example("ID --format json", "Read a complete saved record."))
+    .hint("CLI: use get ID. It already returns the complete record; --purpose and --verbosity are not accepted.")
     .mcp(annotations::read_only())
     .done()
 }

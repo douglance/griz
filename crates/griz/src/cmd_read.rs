@@ -41,6 +41,8 @@ pub fn read_command() -> CommandDef {
         },
     )
     .description("Read a file as numbered lines with its fingerprint. Pass the fingerprint as expect_hash to make an edit refuse a changed file.")
+    .examples(crate::usage::example("\"src one.rs\" --root /path/to/repo --format json", "Read a path containing spaces."))
+    .hint("CLI: the file path is positional. Read-only commands do not take --purpose or --verbosity.")
     .mcp(annotations::read_only())
     .done()
 }
@@ -105,6 +107,8 @@ pub fn find_command() -> CommandDef {
         },
     )
     .description("Find literal or regex matches across files. Each match carries its byte range and file fingerprint, so a program can edit exactly what it found.")
+    .examples(crate::usage::example("--root /path/to/repo --paths \"src one.rs\" --paths \"src two.rs\" --literal oldName --expect-matches 2 --format json", "Find an expected number of matches."))
+    .hint(crate::usage::PATHS)
     .mcp(annotations::read_only())
     .done()
 }

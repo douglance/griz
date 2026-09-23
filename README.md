@@ -167,6 +167,45 @@ Operations, applied in order:
 {op:"move",    path, to, expect_hash?}
 ```
 
+## CLI programs
+
+The CLI uses positional identifiers and repeated flags; MCP uses named JSON fields.
+
+| Task | CLI | MCP |
+|---|---|---|
+| Apply a passed plan | `griz apply PLAN ...` | `griz.apply({ plan, ... })` |
+| Undo an operation | `griz undo OP --root ROOT ...` | `griz.undo({ root, operation, ... })` |
+| Select two paths | `--paths 'src one.rs' --paths 'src two.rs'` | `paths: ["src one.rs", "src two.rs"]` |
+| Inspect a record | `griz get ID --format json` | `griz.get({ id })` |
+
+The ellipses above stand for the mutation's required purpose and idempotency key.
+`get` returns the complete record; it does not take `--purpose` or `--verbosity`.
+`--paths '["src one.rs"]'` is one literal path on the CLI, not an array.
+
+Programs must pass `--format json`, check process exit status and
+`outcome == "passed"`, and only then extract the identifier. Parsing a particular
+output line or extracting `id` alone can hide a failure. A failed plan can retain
+an ID for inspection; its count and syntax expectations are not carried into
+`apply`. Stop before apply when planning fails. Preserve stdout and stderr when
+the process fails or its response is malformed, including errors without an ID.
+
+[The guarded CLI example](crates/griz/examples/guarded_cli.py) uses Python's
+standard library and exact argument arrays to find, plan, apply, check, and
+report a guarded undo after a failed check. It never starts the check after a
+refused apply. Run it under apoc to supervise the whole attempt:
+
+```sh
+apoc execution start python3 --purpose "Rename and check" --idempotency-key rename-attempt-1 --expect-exit-code 0 -- /path/to/griz/crates/griz/examples/guarded_cli.py --root /path/to/repo --path "src one.rs" --path "src two.rs" --literal oldName --replace new_name --expected-matches 12 --key rename-attempt-1 --check cargo check
+```
+
+Put `--check` last: everything after it is the check's executable and arguments.
+Use a stable key for an attempt; a different edit needs a new key. The example
+does not resume an interrupted workflow automatically. Retain apoc's execution
+ID and inspect its terminal result before starting another attempt. Its report
+retains the applied operation ID if the check cannot start, and includes the
+original check output and undo verdict when a check fails. A successful undo
+does not turn a failed check into success.
+
 ## Use
 
 ```sh

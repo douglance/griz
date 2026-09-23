@@ -45,6 +45,8 @@ pub fn apply_command() -> CommandDef {
         },
     )
     .description("Write a plan all-or-nothing. Every file must still have the fingerprint it was planned against; returns an operation id for undo.")
+    .examples(crate::usage::example("PLAN --expect-files 1 --purpose \"Apply reviewed edit\" --idempotency-key edit-apply --format json", "Apply a passed plan; PLAN is positional."))
+    .hint("CLI: use apply PLAN, not apply --plan PLAN. Check exit status and outcome == passed before running checks. Use --format json in programs.")
     .mcp(annotations::writes_files())
     .done()
 }
@@ -136,6 +138,8 @@ pub fn undo_command() -> CommandDef {
         },
     )
     .description("Restore what an operation replaced, for files still exactly as it left them, or merged onto a newer text with on_stale merge. Give since instead of the operation argument to restore every applied operation from that one through the newest as one operation. An undo is itself an operation and can be undone.")
+    .examples(crate::usage::example("OP --root /path/to/repo --paths \"src one.rs\" --paths \"src two.rs\" --purpose \"Restore edit\" --idempotency-key edit-undo --format json", "Restore selected files; OP is positional."))
+    .hint("CLI: use undo OP; inspect its outcome before claiming restoration. Repeat --paths for each path. MCP: paths is a JSON array.")
     .mcp(annotations::writes_files())
     .done()
 }
@@ -210,6 +214,8 @@ pub fn absorb_command() -> CommandDef {
         },
     )
     .description("Fold later changes to an operation's files, such as a formatter's, into the operation, so undo still restores the text from before the apply.")
+    .examples(crate::usage::example("OP --root /path/to/repo --paths \"src one.rs\" --paths \"src two.rs\" --purpose \"Absorb formatting\" --idempotency-key edit-absorb --format json", "Record formatting for selected files."))
+    .hint("CLI: use absorb OP; repeat --paths for each path. MCP: paths is a JSON array. Check exit status and outcome == passed.")
     .mcp(annotations::records())
     .done()
 }
