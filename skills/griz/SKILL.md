@@ -49,9 +49,16 @@ on failure. An error may have no ID; a failed plan may have an inspection ID.
 A shell pipeline that extracts only `id` can conceal the producer's failure.
 Use exact argument arrays rather than composing a command string.
 
-The repository's `crates/griz/examples/guarded_cli.py` is a runnable example.
-It checks process status, JSON shape, verdict, and returned IDs; on check failure
-it reports the original output and the undo verdict. Run it with
+For a fully specified literal edit, run the repository's
+`crates/griz/examples/guarded_cli.py` directly. It performs the match-count,
+fingerprint, and syntax checks before applying and runs the supplied check once.
+Use `--help` for arguments. A passed receipt includes the check result; avoid
+dumping the helper source or adding another copy of its checks on the successful
+path. Inspect the implementation when diagnosing a reported failure or when the
+transformation needs different behavior.
+
+The helper checks process status, JSON shape, verdict, and returned IDs; on check
+failure it reports the original output and the undo verdict. Run it with
 `apoc execution start python3 ... -- /path/to/guarded_cli.py ...` so an unfinished
 check retains a durable execution ID. See the README for the complete invocation.
 

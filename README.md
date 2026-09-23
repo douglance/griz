@@ -205,6 +205,13 @@ It never starts the check after a refused apply. Run it under apoc to supervise 
 apoc execution start python3 --purpose "Rename and check" --idempotency-key rename-attempt-1 --expect-exit-code 0 -- /path/to/griz/crates/griz/examples/guarded_cli.py --root /path/to/repo --path "src one.rs" --path "src two.rs" --literal oldName --replace new_name --expected-matches 12 --key rename-attempt-1 --check cargo check
 ```
 
+For a fully specified literal edit, run this recipe directly. It performs the
+match-count, fingerprint, and syntax checks before applying and runs the supplied
+check once. Use `--help` for argument details. A passed receipt already includes
+the check result; avoid dumping the helper source or adding another copy of its
+checks on the successful path. Inspect the implementation when diagnosing a
+reported failure or when the requested transformation needs different behavior.
+
 Put `--check` last: everything after it is the check's executable and arguments.
 Use a stable key for an attempt; a different edit needs a new key. The example
 does not resume an interrupted workflow automatically. Retain apoc's execution

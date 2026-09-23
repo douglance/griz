@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Example: replace literal matches, check the edit, and report guarded rollback."""
+"""Replace a known literal with one guarded find/plan/apply/check workflow.
+
+Checks the exact match count, file fingerprints, and planned syntax before
+applying, then runs the supplied check once. A passed outcome means the edit
+applied and the check exited zero. A failed check attempts guarded undo and
+retains its output and the undo verdict. A check that cannot start retains the
+operation ID for recovery.
+
+Use --help for arguments; inspect this implementation when debugging the helper.
+"""
 
 import argparse
 import json
