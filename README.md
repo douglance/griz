@@ -207,7 +207,10 @@ does not resume an interrupted workflow automatically. Retain apoc's execution
 ID and inspect its terminal result before starting another attempt. Its report
 retains the applied operation ID if the check cannot start, and includes the
 original check output and undo verdict when a check fails. A successful undo
-does not turn a failed check into success.
+does not turn a failed check into success. Successful checks report exit status
+and output byte counts without printing the check logs. Put `--show-check-output`
+before `--check` to include those logs on success too; failed checks always
+include both streams.
 
 ## Use
 

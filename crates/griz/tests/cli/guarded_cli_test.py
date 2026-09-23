@@ -41,6 +41,7 @@ class WorkflowTests(unittest.TestCase):
         self.options = SimpleNamespace(
             griz=BINARY, root=str(self.root), path=[self.file.name],
             literal="oldName", replace="new_name", expected_matches=1, key="test",
+            show_check_output=False,
             check=[sys.executable, "-c",
                    "from pathlib import Path; Path('checked').write_text('ran')"],
         )
@@ -76,6 +77,39 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.file.read_text(), "new_name\n")
         self.assertEqual(second.read_text(), "new_name\n")
         self.assertTrue(self.marker.exists())
+
+
+    def test_successful_check_output_is_compact(self):
+        self.options.check = [sys.executable, "-c",
+                              "import sys; print('é' * 10000); print('warning', file=sys.stderr)"]
+        result = self.workflow()
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertNotIn("stdout", result["check"])
+        self.assertNotIn("stderr", result["check"])
+        self.assertEqual(result["check"]["stdout_bytes"], 20001)
+        self.assertEqual(result["check"]["stderr_bytes"], 8)
+        self.assertLess(len(json.dumps(result)), 1000)
+        self.assertEqual(self.file.read_text(), "new_name\n")
+
+    def test_successful_check_output_can_be_requested(self):
+        self.options.show_check_output = True
+        self.options.check = [sys.executable, "-c",
+                              "import sys; print('checked'); print('warning', file=sys.stderr)"]
+        result = self.workflow()
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(result["check"]["stdout"], "checked\n")
+        self.assertEqual(result["check"]["stderr"], "warning\n")
+
+    def test_cli_can_show_successful_check_output(self):
+        result = REAL_RUN([
+            sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+            "--root", str(self.root), "--path", self.file.name,
+            "--literal", "oldName", "--replace", "new_name",
+            "--expected-matches", "1", "--key", "output",
+            "--show-check-output", "--check", sys.executable, "-c", "print('checked')",
+        ], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(json.loads(result.stdout)["check"]["stdout"], "checked\n")
 
     def test_exit_guard_stops_even_with_passed_json(self):
         def intercept(stage, argv, kwargs):
@@ -143,10 +177,11 @@ class WorkflowTests(unittest.TestCase):
 
     def test_failed_check_restores_and_preserves_output(self):
         self.options.check = [sys.executable, "-c",
-                              "import sys; print('bad check'); sys.exit(3)"]
+                              "import sys; print('bad check'); print('diagnostic', file=sys.stderr); sys.exit(3)"]
         result = self.workflow()
         self.assertEqual(result["outcome"], "failed", result)
         self.assertEqual(result["check"]["stdout"], "bad check\n")
+        self.assertEqual(result["check"]["stderr"], "diagnostic\n")
         self.assertEqual(result["check"]["exit_code"], 3)
         self.assertEqual(result["undo"]["outcome"], "passed")
         self.assertEqual(self.file.read_text(), "oldName\n")

@@ -100,6 +100,17 @@ def plan_edit(options):
     return plan, file_count
 
 
+def check_report(options, check):
+    report = {
+        "command": options.check, "exit_code": check.returncode,
+        "stdout_bytes": len(check.stdout.encode()),
+        "stderr_bytes": len(check.stderr.encode()),
+    }
+    if check.returncode != 0 or options.show_check_output:
+        report.update(stdout=check.stdout, stderr=check.stderr)
+    return report
+
+
 def edit_and_check(options):
     plan, file_count = plan_edit(options)
     applied = griz_command(options, "apply", [
@@ -113,10 +124,7 @@ def edit_and_check(options):
         return {**report, **error.report}
     report.update({
         "outcome": "passed" if check.returncode == 0 else "failed",
-        "check": {
-            "command": options.check, "exit_code": check.returncode,
-            "stdout": check.stdout, "stderr": check.stderr,
-        },
+        "check": check_report(options, check),
     })
     if check.returncode == 0:
         return report
@@ -148,6 +156,8 @@ def parse_options():
     parser.add_argument("--key", required=True,
                         help="Stable identity for this attempt; new edits need new keys.")
     parser.add_argument("--griz", default="griz", help="griz executable to invoke.")
+    parser.add_argument("--show-check-output", action="store_true",
+                        help="Include stdout and stderr even when the check passes.")
     parser.add_argument("--check", nargs=argparse.REMAINDER, required=True,
                         help="Check executable and exact arguments; put this option last.")
     options = parser.parse_args()
