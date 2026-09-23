@@ -1,6 +1,7 @@
 # Advanced griz operations
 
-Load only for the operation you need. Follow the guards in [SKILL.md](../SKILL.md).
+Load only for the operation you need. For direct calls, follow the
+[composition guards](compose.md#guards-for-direct-calls).
 
 ## CLI spelling and failure handling
 

@@ -1,7 +1,26 @@
 # Compose griz in host Code Mode
 
-Follow the guards in [SKILL.md](../SKILL.md). Set `root` to the absolute project
-path. Keep intermediate matches and plans inside the program.
+Set `root` to the absolute project path. Keep intermediate matches and plans
+inside the program.
+
+## Guards for direct calls
+
+The helper enforces these checks and derives mutation keys from --key. Supply
+them yourself when calling primitives directly.
+
+- Pass absolute root to path-based primitives; apply and get use recorded IDs
+  and accept no root. Mutations need purpose and idempotency_key, scoped per
+  command. Same input/key replays; new edits need new keys.
+- Declare match, edit, and file counts. Preserve found byte ranges and file_hash
+  as expect_hash in edits. Plan with expect_syntax: "clean".
+- Stop on any non-passed verdict. A failed plan's ID is for inspection; applying
+  it does not carry its count or syntax expectations forward. An apply count
+  mismatch writes nothing and needs no undo.
+- Direct griz CLI calls use --format json; the helper already emits JSON.
+  Require exit zero and outcome == "passed" before using an ID. Keep stdout/stderr
+  on failure; errors may have no ID. Do not extract only id through a pipeline.
+- After a terminal check failure, inspect undo's verdict. Concurrent changes can
+  prevent restoration. Never undo while the check is still pending.
 
 ## Edit exactly what you found
 

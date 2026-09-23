@@ -13,11 +13,13 @@ available; for CLI execution, use the guarded helper below.
 - **Host Code Mode/MCP:** read [composition](references/compose.md), then compose
   the primitives and check in one program. Return only the verdict and IDs.
 - **CLI:** run the repository's crates/griz/examples/guarded_cli.py directly.
-  It performs find, plan, apply, check, and guarded undo after a failed check.
+  It plans and applies guarded edits, runs the check, and attempts guarded undo
+  after a failed check.
   The recipe below contains routine arguments; do not also read primitive help
   or helper source unless a missing option or reported failure requires it.
 
-Read the skill once. Do not reload an identical guide or repeat a successful
+Read the skill once. Batch independent context reads; do not list files only to
+rediscover supplied paths. Do not reload an identical guide or repeat a successful
 helper check. Supervise long checks with apoc execution start; retain its ID and
 wait for a terminal outcome before retrying or undoing.
 
@@ -60,25 +62,6 @@ The helper checks process status, JSON, verdicts, and IDs. A passed receipt
 includes the check result. On failure, inspect its stage and undo verdict;
 retain the operation ID if the check could not start. It does not automatically
 resume an interrupted workflow.
-
-## Guards for every workflow
-
-The helper enforces these checks and derives mutation keys from --key. Supply
-them yourself when calling primitives directly.
-
-- Pass absolute root to path-based primitives; apply and get use recorded IDs
-  and accept no root. Mutations need purpose and idempotency_key, scoped per
-  command. Same input/key replays; new edits need new keys.
-- Declare match, edit, and file counts. Preserve found byte ranges and file_hash
-  as expect_hash in edits. Plan with expect_syntax: "clean".
-- Stop on any non-passed verdict. A failed plan's ID is for inspection; applying
-  it does not carry its count or syntax expectations forward. An apply count
-  mismatch writes nothing and needs no undo.
-- Direct griz CLI calls use --format json; the helper already emits JSON.
-  Require exit zero and outcome == "passed" before using an ID. Keep stdout/stderr
-  on failure; errors may have no ID. Do not extract only id through a pipeline.
-- After a terminal check failure, inspect undo's verdict. Concurrent changes can
-  prevent restoration. Never undo while the check is still pending.
 
 For direct patch planning, new/whole files, partial selection, capture-target edits, language
 servers, formatters, tolerant anchors, merge conflicts, or history rewinds, read
