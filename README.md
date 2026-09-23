@@ -218,6 +218,38 @@ include both streams. Operation JSON travels through a temporary `--ops @file`,
 so large plans do not exceed command-line argument limits. The input file is
 removed after planning, including when planning fails.
 
+## Compose with apoc
+
+Register the installed griz executable as a provider to make its primitives
+available immediately in apoc Code Mode:
+
+```sh
+apoc provider add-mcp-stdio griz /path/to/griz --arg=--mcp --purpose "Enable griz composition" --idempotency-key griz-provider
+```
+
+Then `apoc capability search griz.find` should include `griz.find`. Pass
+`root` explicitly on path-resolving griz calls. A configured server appearing
+in `apoc mcp check` is not proof that the running Code Mode actor exposes its
+namespace; verify a direct call before building a workflow around it.
+
+## Measure workflow text
+
+[The workflow-text benchmark](crates/griz/examples/measure_workflow_tokens.py)
+executes the same literal edits through search plus a patch, a short Python
+script invoked from the shell, and the guarded griz example. It verifies every
+result against independently rendered expected file contents, then counts
+request and response text with `cl100k_base` and `o200k_base`:
+
+```sh
+uv run --with tiktoken==0.12.0 python crates/griz/examples/measure_workflow_tokens.py --griz /path/to/griz --output /tmp/griz-token-results
+```
+
+The report retains transcripts and the tested binary's hash. Counts exclude
+model reasoning, schemas, transport envelopes, caching, billing, and common
+fixture/check setup. The shell baseline has no snapshot guard or journal;
+these measurements compare successful edits, not equivalent recovery guarantees.
+Absolute command paths and generated IDs affect the counts.
+
 ## Use
 
 ```sh
