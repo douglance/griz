@@ -20,12 +20,16 @@ class CommandFailure(Exception):
 
 def invoke(argv, root, stage):
     try:
-        result = subprocess.run(argv, cwd=root, capture_output=True, text=True)
+        result = subprocess.run(argv, cwd=root, capture_output=True)
     except OSError as error:
         raise CommandFailure({
             "stage": stage, "outcome": "error", "command": argv,
             "reason": str(error),
         }) from error
+    result.stdout_bytes = len(result.stdout)
+    result.stderr_bytes = len(result.stderr)
+    result.stdout = result.stdout.decode("utf-8", errors="backslashreplace")
+    result.stderr = result.stderr.decode("utf-8", errors="backslashreplace")
     return result
 
 
@@ -131,8 +135,8 @@ def plan_from_ops(options, ops, file_count):
 def check_report(options, check):
     report = {
         "command": options.check, "exit_code": check.returncode,
-        "stdout_bytes": len(check.stdout.encode()),
-        "stderr_bytes": len(check.stderr.encode()),
+        "stdout_bytes": check.stdout_bytes,
+        "stderr_bytes": check.stderr_bytes,
     }
     if check.returncode != 0 or options.show_check_output:
         report.update(stdout=check.stdout, stderr=check.stderr)

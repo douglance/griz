@@ -214,7 +214,8 @@ original check output and undo verdict when a check fails. A successful undo
 does not turn a failed check into success. Successful checks report exit status
 and output byte counts without printing the check logs. Put `--show-check-output`
 before `--check` to include those logs on success too; failed checks always
-include both streams. Operation JSON travels through a temporary `--ops @file`,
+include both streams. Text is decoded as UTF-8, with undecodable bytes shown as
+`\xNN`; byte counts use the captured bytes. Operation JSON travels through a temporary `--ops @file`,
 so large plans do not exceed command-line argument limits. The input file is
 removed after planning, including when planning fails.
 

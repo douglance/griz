@@ -162,7 +162,7 @@ class WorkflowTests(unittest.TestCase):
                 output = REAL_RUN(argv, **kwargs)
                 body = json.loads(output.stdout)
                 body["matches"][1]["file_hash"] = "f" * 64
-                output.stdout = json.dumps(body)
+                output.stdout = json.dumps(body).encode()
                 return output
         result = self.workflow(intercept)
         self.assertEqual(result["stage"], "find", result)
@@ -177,7 +177,7 @@ class WorkflowTests(unittest.TestCase):
                 output = REAL_RUN(argv, **kwargs)
                 body = json.loads(output.stdout)
                 body["matches"][0]["text"] = "different"
-                output.stdout = json.dumps(body)
+                output.stdout = json.dumps(body).encode()
                 return output
         result = self.workflow(intercept)
         self.assert_stopped(result, "find", ["find"])
@@ -191,10 +191,54 @@ class WorkflowTests(unittest.TestCase):
                         output = REAL_RUN(argv, **kwargs)
                         body = json.loads(output.stdout)
                         body["matches"][0]["file_hash"] = fingerprint
-                        output.stdout = json.dumps(body)
+                        output.stdout = json.dumps(body).encode()
                         return output
                 result = self.workflow(intercept)
                 self.assert_stopped(result, "find", ["find"])
+
+
+    def test_binary_check_failure_still_undoes(self):
+        self.options.check = [sys.executable, "-c",
+                              "import os; os.write(1, b'\\xffout\\r\\n'); "
+                              "os.write(2, b'\\xfeerr\\n'); raise SystemExit(7)"]
+        result = self.workflow()
+        self.assertEqual(result["outcome"], "failed", result)
+        self.assertEqual(result["check"]["exit_code"], 7)
+        self.assertEqual(result["check"]["stdout"], "\\xffout\r\n")
+        self.assertEqual(result["check"]["stderr"], "\\xfeerr\n")
+        self.assertEqual(result["check"]["stdout_bytes"], 6)
+        self.assertEqual(result["check"]["stderr_bytes"], 5)
+        self.assertEqual(result["undo"]["outcome"], "passed")
+        self.assertEqual(self.file.read_text(), "oldName\n")
+        self.assertTrue(result["operation"].startswith("op_"))
+        json.dumps(result)
+
+    def test_binary_successful_check_keeps_compact_receipt(self):
+        self.options.check = [sys.executable, "-c", "import os; os.write(1, b'\\xff')"]
+        result = self.workflow()
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(result["check"]["stdout_bytes"], 1)
+        self.assertNotIn("stdout", result["check"])
+        self.assertEqual(self.file.read_text(), "new_name\n")
+
+    def test_binary_successful_check_can_show_escaped_output(self):
+        self.options.show_check_output = True
+        self.options.check = [sys.executable, "-c", "import os; os.write(2, b'\\xfe')"]
+        result = self.workflow()
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(result["check"]["stderr"], "\\xfe")
+        self.assertEqual(result["check"]["stderr_bytes"], 1)
+        json.dumps(result)
+
+    def test_binary_griz_output_is_a_serializable_failure(self):
+        def intercept(stage, argv, kwargs):
+            if stage == "find":
+                return subprocess.CompletedProcess(argv, 0, b"\xff", b"\xfe")
+        result = self.workflow(intercept)
+        self.assert_stopped(result, "find", ["find"])
+        self.assertEqual(result["stdout"], "\\xff")
+        self.assertEqual(result["stderr"], "\\xfe")
+        json.dumps(result)
 
     def test_successful_check_output_is_compact(self):
         self.options.check = [sys.executable, "-c",
@@ -233,7 +277,7 @@ class WorkflowTests(unittest.TestCase):
             if stage == "find":
                 output = REAL_RUN(argv, **kwargs)
                 output.returncode = 7
-                output.stderr = "original transport failure"
+                output.stderr = b"original transport failure"
                 return output
         result = self.workflow(intercept)
         self.assert_stopped(result, "find", ["find"])
@@ -247,7 +291,7 @@ class WorkflowTests(unittest.TestCase):
                 output = REAL_RUN(argv, **kwargs)
                 body = json.loads(output.stdout)
                 body["outcome"] = "failed"
-                output.stdout = json.dumps(body)
+                output.stdout = json.dumps(body).encode()
                 return output
         result = self.workflow(intercept)
         self.assert_stopped(result, "plan", ["find", "plan"])
@@ -260,7 +304,7 @@ class WorkflowTests(unittest.TestCase):
                 self.calls.clear()
                 def intercept(stage, argv, kwargs):
                     if stage == "plan":
-                        return subprocess.CompletedProcess(argv, 0, value, "retained")
+                        return subprocess.CompletedProcess(argv, 0, value.encode(), b"retained")
                 result = self.workflow(intercept)
                 self.assert_stopped(result, "plan", ["find", "plan"])
                 self.assertEqual(result["stdout"], value)
@@ -352,7 +396,7 @@ class WorkflowTests(unittest.TestCase):
         body = {"outcome": "passed", "matches": [{}]}
         def intercept(stage, argv, kwargs):
             if stage == "find":
-                return subprocess.CompletedProcess(argv, 0, json.dumps(body), "")
+                return subprocess.CompletedProcess(argv, 0, json.dumps(body).encode(), b"")
         result = self.workflow(intercept)
         self.assert_stopped(result, "find", ["find"])
         self.assertEqual(result["response"], body)
