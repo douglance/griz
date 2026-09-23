@@ -241,7 +241,19 @@ apply; a failed check uses the same guarded undo as a literal edit. The function
 runs as caller code: return text instead of writing source files. Diagnostic
 prints go to stderr so stdout remains the receipt.
 
-Run this recipe directly for these edits. It checks the match count, fingerprints,
+For caller-written Codex patches, use `--patch edits.patch` (or `--patch -`
+for UTF-8 stdin) with `--expected-files N --expected-edits N`, instead of
+match and replacement options. Paths in the patch resolve under `--root`.
+The patch file itself resolves from the caller's working directory. griz parses
+the patch and checks the declared counts and syntax; apply guards the
+fingerprints captured during planning. The helper uses the same check and undo
+path as match-based edits and stages large inputs in a temporary file.
+
+```sh
+python3 /path/to/griz/crates/griz/examples/guarded_cli.py --root /path/to/repo --patch edits.patch --expected-files 2 --expected-edits 2 --key patch-attempt-1 --check cargo check
+```
+
+Run this recipe directly for these edits. It checks declared counts, fingerprints,
 and planned syntax, then runs the supplied check once. Use `--help` for arguments.
 A passed receipt already includes the check result; do not read the helper source
 or repeat its checks on the successful path. Inspect the implementation when

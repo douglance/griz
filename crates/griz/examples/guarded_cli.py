@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Replace matches with one guarded find/plan/apply/check workflow.
+"""Apply caller matches or Codex patches with one guarded edit/check workflow.
 
-Checks the exact match count, file fingerprints, and planned syntax before
+Checks declared edit/file counts, file fingerprints, and planned syntax before
 applying, then runs the supplied check once. A passed outcome means the edit
 applied and the check exited zero. A failed check attempts guarded undo and
 retains its output and the undo verdict. A check that cannot start retains the
@@ -141,6 +141,8 @@ def transformed_operation(options, match, transform):
 
 
 def plan_edit(options, transform=None):
+    if getattr(options, "patch", None) is not None:
+        return plan_patch(options), options.expected_files
     paths = [arg for path in options.path for arg in ("--paths", path)]
     found = griz_command(options, "find", [
         "--root", options.root, *paths, *query_arguments(options),
@@ -188,13 +190,28 @@ def file_operations(options, matches, transform=None):
 
 
 def plan_from_ops(options, ops, file_count):
+    return plan_input(options, "--ops", json.dumps(ops), options.expected_matches, file_count)
+
+
+def plan_patch(options):
     try:
-        with tempfile.TemporaryDirectory(prefix="griz-ops-") as directory:
-            payload = Path(directory) / "ops.json"
-            payload.write_text(json.dumps(ops), encoding="utf-8")
+        data = sys.stdin.buffer.read() if options.patch == "-" else Path(options.patch).read_bytes()
+        text = data.decode("utf-8")
+    except (OSError, UnicodeError) as error:
+        raise CommandFailure({
+            "stage": "plan", "outcome": "error", "reason": "patch input: " + str(error),
+        }) from error
+    return plan_input(options, "--patch", text, options.expected_edits, options.expected_files)
+
+
+def plan_input(options, mode, text, edit_count, file_count):
+    try:
+        with tempfile.TemporaryDirectory(prefix="griz-input-") as directory:
+            payload = Path(directory) / "input.txt"
+            payload.write_text(text, encoding="utf-8")
             return griz_command(options, "plan", [
-                "--root", options.root, "--ops", "@" + str(payload),
-                "--expect-edits", str(options.expected_matches),
+                "--root", options.root, mode, "@" + str(payload),
+                "--expect-edits", str(edit_count),
                 "--expect-files", str(file_count), "--expect-syntax", "clean",
                 *mutation_options(options, "plan"),
             ], "plan")
@@ -250,22 +267,45 @@ def run(options):
         return error.report
 
 
+def validate_options(parser, options):
+    if not options.check:
+        parser.error("give a check command")
+    if options.patch is not None:
+        match_fields = ("path", "replace", "transform", "language", "expected_matches")
+        if not options.patch or any(getattr(options, name) is not None for name in match_fields):
+            parser.error("patch input cannot be combined with match or replacement options")
+        if any(value is None or value < 1 for value in (options.expected_files, options.expected_edits)):
+            parser.error("patches require positive expected file and edit counts")
+        return
+    if options.expected_files is not None or options.expected_edits is not None:
+        parser.error("expected file and edit counts are patch-only; use expected matches")
+    if not options.path or options.expected_matches is None or options.expected_matches < 1:
+        parser.error("give paths and a positive match count")
+    if options.replace is None and options.transform is None:
+        parser.error("give replace or transform")
+    if any(value == "" for value in (options.literal, options.regex, options.pattern, options.transform)):
+        parser.error("give a nonempty query and transform path")
+
+
 def parse_options():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
-    parser.add_argument("--path", action="append", required=True,
+    parser.add_argument("--path", action="append",
                         help="One file or directory; repeat for more paths.")
     query = parser.add_mutually_exclusive_group(required=True)
     query.add_argument("--literal", help="Exact text to match.")
     query.add_argument("--regex", help="Regex to match; captures are available to a transform.")
     query.add_argument("--pattern", help="Structural pattern, such as legacy($ARG).")
+    query.add_argument("--patch", metavar="FILE", help="Codex patch file; - reads UTF-8 stdin.")
     parser.add_argument("--language", help="Restrict structural matching to files in this language.")
-    replacement = parser.add_mutually_exclusive_group(required=True)
+    replacement = parser.add_mutually_exclusive_group()
     replacement.add_argument("--replace", help="Literal replacement text.")
     replacement.add_argument("--transform", metavar="FILE",
                              help="Caller Python defining replace(match) -> str; - reads stdin. "
                                   "Return text only. Match has text, vars, captures, path, and byte range.")
-    parser.add_argument("--expected-matches", required=True, type=int)
+    parser.add_argument("--expected-matches", type=int)
+    parser.add_argument("--expected-files", type=int, help="Required positive file count for patches.")
+    parser.add_argument("--expected-edits", type=int, help="Required positive edit count for patches.")
     parser.add_argument("--key", required=True,
                         help="Stable identity for this attempt; new edits need new keys.")
     parser.add_argument("--griz", default="griz", help="griz executable to invoke.")
@@ -274,10 +314,7 @@ def parse_options():
     parser.add_argument("--check", nargs=argparse.REMAINDER, required=True,
                         help="Check executable and exact arguments; put this option last.")
     options = parser.parse_args()
-    if options.expected_matches < 1 or not options.check:
-        parser.error("give a positive match count and check command")
-    if any(value == "" for value in (options.literal, options.regex, options.pattern, options.transform)):
-        parser.error("give a nonempty query and transform path")
+    validate_options(parser, options)
     options.root = str(Path(options.root).resolve())
     return options
 

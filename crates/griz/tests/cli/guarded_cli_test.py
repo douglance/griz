@@ -570,6 +570,192 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(body.get("isError"), body)
         return json.loads(body["content"][0]["text"])
 
+
+    def patch_options(self, text=None, files=1, edits=1):
+        payload = self.root / "input patch.txt"
+        payload.write_text(text or (
+            "*** Begin Patch\n*** Update File: sample file.txt\n"
+            "@@\n-oldName\n+new_name\n*** End Patch\n"
+        ))
+        self.options.patch = str(payload)
+        self.options.expected_files = files
+        self.options.expected_edits = edits
+        return payload
+
+    def test_patch_file_updates_and_creates_files(self):
+        self.patch_options(
+            "*** Begin Patch\n*** Update File: sample file.txt\n"
+            "@@\n-oldName\n+new_name\n*** Add File: created file.txt\n"
+            "+created\n*** End Patch\n", files=2, edits=2)
+        staged = []
+        def intercept(stage, argv, kwargs):
+            if stage == "plan":
+                argument = argv[argv.index("--patch") + 1]
+                self.assertTrue(argument.startswith("@"))
+                staged.append(Path(argument[1:]))
+        result = self.workflow(intercept)
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(self.calls, ["plan", "apply", "check"])
+        self.assertEqual(self.file.read_text(), "new_name\n")
+        self.assertEqual((self.root / "created file.txt").read_text(), "created\n")
+        self.assertTrue(self.marker.exists())
+        self.assertEqual(len(staged), 1)
+        self.assertFalse(staged[0].exists())
+
+
+    def test_large_patch_stays_file_backed_and_cleans_up(self):
+        replacement = "new_name" * 65536
+        self.patch_options(
+            "*** Begin Patch\n*** Update File: sample file.txt\n"
+            "@@\n-oldName\n+" + replacement + "\n*** End Patch\n")
+        staged = []
+        def intercept(stage, argv, kwargs):
+            if stage == "plan":
+                self.assertLess(sum(len(arg.encode()) for arg in argv), 4096)
+                staged.append(Path(argv[argv.index("--patch") + 1][1:]))
+        result = self.workflow(intercept)
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(self.file.read_text(), replacement + "\n")
+        self.assertEqual(len(staged), 1)
+        self.assertFalse(staged[0].exists())
+
+    def test_patch_replay_keeps_operation_identity(self):
+        self.patch_options()
+        first = self.workflow()
+        self.assertEqual(first["outcome"], "passed", first)
+        second = self.workflow()
+        self.assertEqual(second["outcome"], "passed", second)
+        self.assertEqual(first["operation"], second["operation"])
+        self.assertEqual(self.file.read_text(), "new_name\n")
+
+
+    def test_patch_file_path_uses_calling_directory(self):
+        payload = self.patch_options()
+        caller = Path(self.temp.name)
+        relative = caller / "caller patch.txt"
+        relative.write_bytes(payload.read_bytes())
+        command = [
+            sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+            "--root", str(self.root), "--patch", relative.name, "--expected-files", "1",
+            "--expected-edits", "1", "--key", "relative-patch",
+            "--check", *self.options.check,
+        ]
+        result = REAL_RUN(command, cwd=caller, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["outcome"], "passed")
+        self.assertEqual(self.file.read_text(), "new_name\n")
+        self.assertTrue(self.marker.exists())
+
+    def test_patch_cli_stdin(self):
+        payload = self.patch_options()
+        command = [
+            sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+            "--root", str(self.root), "--patch", "-", "--expected-files", "1",
+            "--expected-edits", "1", "--key", "stdin-patch",
+            "--check", *self.options.check,
+        ]
+        result = REAL_RUN(command, input=payload.read_bytes(), capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["outcome"], "passed")
+        self.assertEqual(self.file.read_text(), "new_name\n")
+        self.assertTrue(self.marker.exists())
+
+    def test_patch_count_mismatch_never_applies(self):
+        for files, edits in ((2, 1), (1, 2)):
+            with self.subTest(files=files, edits=edits):
+                self.calls.clear()
+                self.patch_options(files=files, edits=edits)
+                self.options.key = f"counts-{files}-{edits}"
+                result = self.workflow()
+                self.assert_stopped(result, "plan", ["plan"])
+                self.assertIn("expected 2", result["stdout"])
+
+    def test_patch_syntax_failure_never_applies(self):
+        source = self.root / "app.py"
+        source.write_text("value = 1\n")
+        self.patch_options(
+            "*** Begin Patch\n*** Update File: app.py\n"
+            "@@\n-value = 1\n+def broken(\n*** End Patch\n")
+        result = self.workflow()
+        self.assert_stopped(result, "plan", ["plan"])
+        self.assertEqual(source.read_text(), "value = 1\n")
+
+    def test_patch_stale_apply_never_runs_check(self):
+        self.patch_options()
+        def intercept(stage, argv, kwargs):
+            if stage == "apply":
+                self.file.write_text("oldName\noutside\n")
+        result = self.workflow(intercept)
+        self.assertEqual(result["stage"], "apply", result)
+        self.assertEqual(result["outcome"], "error", result)
+        self.assertEqual(self.calls, ["plan", "apply"])
+        self.assertEqual(self.file.read_text(), "oldName\noutside\n")
+        self.assertFalse(self.marker.exists())
+
+    def test_patch_failed_check_preserves_preexisting_note(self):
+        self.file.write_text("# user's note\noldName\n")
+        self.patch_options()
+        self.options.check = [sys.executable, "-c", "print('rejected'); raise SystemExit(17)"]
+        result = self.workflow()
+        self.assertEqual(result["outcome"], "failed", result)
+        self.assertEqual(result["check"]["exit_code"], 17)
+        self.assertEqual(result["undo"]["outcome"], "passed", result)
+        self.assertEqual(self.calls, ["plan", "apply", "check", "undo"])
+        self.assertEqual(self.file.read_text(), "# user's note\noldName\n")
+
+    def test_patch_missing_or_non_utf8_input_never_applies(self):
+        payload = self.patch_options()
+        for content in (None, b"\xff"):
+            with self.subTest(content=content):
+                self.calls.clear()
+                if content is None:
+                    payload.unlink()
+                else:
+                    payload.write_bytes(content)
+                result = self.workflow()
+                self.assert_stopped(result, "plan", [])
+
+
+    def test_match_parser_still_requires_scope_count_and_replacement(self):
+        base = [sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+                "--root", str(self.root), "--literal", "oldName", "--key", "invalid-match"]
+        cases = [
+            ["--replace", "x", "--expected-matches", "1"],
+            ["--path", self.file.name, "--replace", "x"],
+            ["--path", self.file.name, "--expected-matches", "1"],
+            ["--path", self.file.name, "--replace", "x", "--expected-matches", "0"],
+            ["--path", self.file.name, "--replace", "x", "--expected-matches", "1",
+             "--expected-files", "1", "--expected-edits", "1"],
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = REAL_RUN(base + args + ["--check", *self.options.check],
+                                  capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertEqual(self.file.read_text(), "oldName\n")
+                self.assertFalse(self.marker.exists())
+
+    def test_patch_parser_rejects_mixed_modes_and_invalid_counts(self):
+        payload = self.patch_options()
+        base = [sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+                "--root", str(self.root), "--patch", str(payload), "--key", "invalid"]
+        counts = ["--expected-files", "1", "--expected-edits", "1"]
+        cases = [
+            counts + ["--path", self.file.name], counts + ["--replace", "x"],
+            counts + ["--transform", "-"], counts + ["--language", "python"],
+            counts + ["--expected-matches", "1"], counts + ["--literal", "oldName"],
+            ["--expected-files", "0", "--expected-edits", "1"],
+            ["--expected-files", "1", "--expected-edits", "0"],
+            ["--expected-files", "1"], ["--expected-edits", "1"],
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = REAL_RUN(base + args + ["--check", *self.options.check],
+                                  capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertEqual(self.file.read_text(), "oldName\n")
+                self.assertFalse(self.marker.exists())
+
     def test_cli_and_mcp_paths_and_ids_agree(self):
         second = self.root / "another file.txt"
         second.write_text("oldName\n")

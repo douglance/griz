@@ -51,6 +51,11 @@ vars for structural captures, captures for regex groups (group 1 at index 0),
 path, and byte range. For whole JSON files, use --regex '(?s)\A.*\z',
 parse match["text"], change the selected values, and return serialized text.
 
+For a caller-written Codex patch, replace match/replacement options with
+`--patch FILE --expected-files N --expected-edits N`; `--patch -` reads stdin.
+Patch paths resolve under ROOT; FILE resolves from the caller's directory.
+The same check and guarded undo run afterward.
+
 The helper checks process status, JSON, verdicts, and IDs. A passed receipt
 includes the check result. On failure, inspect its stage and undo verdict;
 retain the operation ID if the check could not start. It does not automatically
@@ -75,7 +80,7 @@ them yourself when calling primitives directly.
 - After a terminal check failure, inspect undo's verdict. Concurrent changes can
   prevent restoration. Never undo while the check is still pending.
 
-For patches, new/whole files, partial selection, capture-target edits, language
+For direct patch planning, new/whole files, partial selection, capture-target edits, language
 servers, formatters, tolerant anchors, merge conflicts, or history rewinds, read
 [advanced operations](references/advanced.md). Read that reference for direct CLI
 primitive spelling or full-record/error inspection too.
