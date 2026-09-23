@@ -96,6 +96,9 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   paths and their original filters remain usable, but a write containing multiple
   paths to the same destination is refused before staging. This identifies parent
   directories.
+- **Native edit fields are checked.** Operations, anchors, byte ranges, and
+  structural-pattern locators reject unknown fields. Plan errors name the
+  operation index and unexpected field, so a misspelled guard cannot be ignored.
 - **Existing filename aliases compose.** When the filesystem resolves differently
   cased names to one existing file, reads, plans, and filters use its actual entry
   name. Case-sensitive filesystems keep distinct names separate, as do distinct

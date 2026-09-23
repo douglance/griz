@@ -11,6 +11,7 @@ pub use crate::problem::{Problem, ProblemKind, Window};
 
 /// A half-open byte range `[start, end)` in a file's text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ByteRange {
     /// First byte of the range.
     pub start: usize,
@@ -48,10 +49,10 @@ pub struct Anchor {
 
 /// One requested change.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "op", rename_all = "snake_case")]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Op {
     /// Replace anchored text, an exact byte range, or a structural pattern
-    /// match. Give exactly one of `find`, `range`, or `pattern`.
+    /// match.
     Replace {
         /// File to change.
         path: PathBuf,

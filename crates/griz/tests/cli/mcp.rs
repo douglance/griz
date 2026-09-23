@@ -1,6 +1,7 @@
 //! MCP serves each command as its own direct tool.
 
 mod addressing;
+mod edit_input;
 mod search_errors;
 mod transport;
 

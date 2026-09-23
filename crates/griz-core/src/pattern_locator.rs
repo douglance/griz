@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// A structural pattern that locates an edit inside one file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PatternLocator {
     /// Structural pattern, e.g. `foo($A, $$$REST)`.
     pub pattern: String,
