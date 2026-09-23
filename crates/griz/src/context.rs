@@ -106,7 +106,7 @@ fn normalize_with(resolver: &mut PathResolver, path: &Path) -> Result<PathBuf, C
         }
     }
     resolver
-        .resolve(&out)
+        .resolve_file(&out)
         .map_err(|error| CmdError::invalid(error.to_string()))
 }
 

@@ -78,7 +78,13 @@ fn validate_destinations(targets: &[Target]) -> Result<(), StoreError> {
     let mut paths = std::collections::BTreeSet::new();
     let mut resolver = crate::PathResolver::default();
     for target in targets {
-        if !paths.insert(resolver.resolve(&target.path)?) {
+        let entry = resolver.resolve(&target.path)?;
+        if resolver.resolve_file(&target.path)? != entry {
+            return Err(StoreError::Invalid(
+                "planned path names a file symlink; plan again to record its target".into(),
+            ));
+        }
+        if !paths.insert(entry) {
             return Err(StoreError::Invalid(
                 "multiple planned paths refer to the same destination; plan again".into(),
             ));

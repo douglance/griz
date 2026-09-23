@@ -10,6 +10,39 @@ use std::{
 };
 
 #[test]
+fn file_alias_targets_are_cached_only_within_one_batch() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.write("first.txt", "first")?;
+    fx.write("second.txt", "second")?;
+    symlink("first.txt", fx.path("alias.txt"))?;
+    let first = fx.path("first.txt").canonicalize()?;
+    let second = fx.path("second.txt").canonicalize()?;
+    let mut resolver = griz_store::PathResolver::default();
+    assert_eq!(resolver.resolve_file(&fx.path("alias.txt"))?, first);
+    fs::remove_file(fx.path("alias.txt"))?;
+    symlink("second.txt", fx.path("alias.txt"))?;
+    assert_eq!(resolver.resolve_file(&fx.path("alias.txt"))?, first);
+    assert_eq!(
+        griz_store::PathResolver::default().resolve_file(&fx.path("alias.txt"))?,
+        second
+    );
+    Ok(())
+}
+
+#[test]
+fn a_saved_unresolved_file_alias_is_refused_before_writing() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.write("target.txt", "before")?;
+    symlink("target.txt", fx.path("alias.txt"))?;
+    let plan = fx.plan(vec![fx.replace("alias.txt", "before", "after")])?;
+    let result = fx.store.apply(&request(&plan));
+    assert!(matches!(result, Err(StoreError::Invalid(_))), "{result:?}");
+    assert_eq!(fx.read("target.txt")?, "before");
+    assert!(fx.path("alias.txt").is_symlink());
+    Ok(())
+}
+
+#[test]
 fn a_resolver_keeps_directory_identity_only_within_its_batch() -> TestResult {
     let fx = Fixture::new()?;
     fs::create_dir(fx.path("actual"))?;

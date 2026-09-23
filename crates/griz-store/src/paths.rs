@@ -32,6 +32,31 @@ pub fn directory_path(path: &Path) -> io::Result<PathBuf> {
     }
 }
 
+fn follow_file_links(resolver: &mut PathResolver, path: &Path) -> io::Result<PathBuf> {
+    let mut entry = resolver.resolve(path)?;
+    let mut visited = std::collections::BTreeSet::new();
+    while let Some(target) = file_link(&entry)? {
+        if !visited.insert(entry.clone()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("symbolic-link cycle: {}", entry.display()),
+            ));
+        }
+        let parent = entry.parent().unwrap_or_else(|| Path::new("."));
+        entry = resolver.resolve(&parent.join(target))?;
+    }
+    Ok(entry)
+}
+
+fn file_link(path: &Path) -> io::Result<Option<PathBuf>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => std::fs::read_link(path).map(Some),
+        Ok(_) => Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 fn require_directory(path: &Path) -> io::Result<()> {
     if std::fs::metadata(path)?.is_dir() {
         return Ok(());
@@ -61,13 +86,27 @@ pub fn destination_path(path: &Path) -> io::Result<PathBuf> {
     PathResolver::default().resolve(path)
 }
 
-/// Parent directory identities retained for one batch of paths.
+/// Directory and file-alias identities retained for one batch of paths.
 #[derive(Default)]
 pub struct PathResolver {
     directories: std::collections::BTreeMap<PathBuf, PathBuf>,
+    files: std::collections::BTreeMap<PathBuf, PathBuf>,
 }
 
 impl PathResolver {
+    /// Resolves file links to their targets, caching each submitted path for this batch.
+    ///
+    /// # Errors
+    /// Returns an error for inaccessible paths or symbolic-link cycles.
+    pub fn resolve_file(&mut self, path: &Path) -> io::Result<PathBuf> {
+        if let Some(target) = self.files.get(path) {
+            return Ok(target.clone());
+        }
+        let target = follow_file_links(self, path)?;
+        self.files.insert(path.to_path_buf(), target.clone());
+        Ok(target)
+    }
+
     /// Resolves a destination, looking up each submitted parent only once.
     ///
     /// # Errors

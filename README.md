@@ -95,7 +95,15 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   suffixes stay creatable; dangling directory links are rejected. Older saved
   paths and their original filters remain usable, but a write containing multiple
   paths to the same destination is refused before staging. This identifies parent
-  directories; final file-name case aliases and file symlinks are separate.
+  directories; final file-name case aliases are separate.
+- **File aliases address their targets.** New reads, plans, and path filters
+  resolve file symlinks without replacing the links. Edits through an alias and
+  its target compose in one file. A saved plan keeps that target even if the alias
+  is later retargeted or removed. Creating through a dangling file link creates
+  its target; link cycles are errors. Moving or deleting through a file link
+  operates on its target and leaves the link entry unchanged. An older saved path,
+  or a recorded target newly replaced by a link, is refused before staging:
+  plan again to record the intended target.
 - **Replacement permissions stay intact.** Replacing an existing file retains
   its Unix access and executable bits, including during undo and crash recovery.
   A later permission change is retained when undo replaces that file. Newly
