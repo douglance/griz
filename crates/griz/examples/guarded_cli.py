@@ -275,12 +275,12 @@ def plan_input(options, inputs, edit_count, file_count):
 
 def check_report(options, check):
     report = {
-        "command": options.check, "exit_code": check.returncode,
+        "exit_code": check.returncode,
         "stdout_bytes": check.stdout_bytes,
         "stderr_bytes": check.stderr_bytes,
     }
     if check.returncode != 0 or options.show_check_output:
-        report.update(stdout=check.stdout, stderr=check.stderr)
+        report.update(command=options.check, stdout=check.stdout, stderr=check.stderr)
     return report
 
 
@@ -423,7 +423,7 @@ def parse_options(arguments=None, transform=None):
                         help="Stable identity for this attempt; new edits need new keys.")
     parser.add_argument("--griz", default="griz", help="griz executable to invoke.")
     parser.add_argument("--show-check-output", action="store_true",
-                        help="Include stdout and stderr even when the check passes.")
+                        help="Include the check command, stdout, and stderr even when the check passes.")
     parser.add_argument("--check", nargs=argparse.REMAINDER, required=True,
                         help="Check executable and exact arguments; put this option last.")
     options = parser.parse_args(arguments)

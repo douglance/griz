@@ -36,7 +36,7 @@ repository helper path; --griz BIN optionally selects the griz executable.
 | --expected-matches N --key KEY | Positive total match count and identity for this attempt. |
 | --check CMD ARG... | Check executable and arguments; this option must be last. |
 | --language LANG | Optional structural file-language filter, not an extension override. |
-| --show-check-output | Optional success logs; failures already retain output. |
+| --show-check-output | Include the check command and success logs; failures retain both. |
 
 For several known edit/check steps, compose `edit` calls in one Python program.
 It takes the same CLI argument list and an optional callable transform:

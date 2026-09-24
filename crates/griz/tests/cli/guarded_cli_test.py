@@ -453,6 +453,7 @@ class WorkflowTests(unittest.TestCase):
         result = self.workflow()
         self.assertEqual(result["outcome"], "failed", result)
         self.assertEqual(result["check"]["exit_code"], 7)
+        self.assertEqual(result["check"]["command"], self.options.check)
         self.assertEqual(result["check"]["stdout"], "\\xffout\r\n")
         self.assertEqual(result["check"]["stderr"], "\\xfeerr\n")
         self.assertEqual(result["check"]["stdout_bytes"], 6)
@@ -491,11 +492,13 @@ class WorkflowTests(unittest.TestCase):
 
     def test_successful_check_output_is_compact(self):
         self.options.check = [sys.executable, "-c",
-                              "import sys; print('é' * 10000); print('warning', file=sys.stderr)"]
+                              "import sys; print('é' * 10000); print('warning', file=sys.stderr)"
+                              + "\n# " + "caller supplied verification " * 512]
         result = self.workflow()
         self.assertEqual(result["outcome"], "passed", result)
         self.assertNotIn("stdout", result["check"])
         self.assertNotIn("stderr", result["check"])
+        self.assertNotIn("command", result["check"])
         self.assertEqual(result["check"]["stdout_bytes"], 20001)
         self.assertEqual(result["check"]["stderr_bytes"], 8)
         self.assertLess(len(json.dumps(result)), 1000)
@@ -508,6 +511,7 @@ class WorkflowTests(unittest.TestCase):
         result = self.workflow()
         self.assertEqual(result["outcome"], "passed", result)
         self.assertEqual(result["check"]["stdout"], "checked\n")
+        self.assertEqual(result["check"]["command"], self.options.check)
         self.assertEqual(result["check"]["stderr"], "warning\n")
 
     def test_cli_can_show_successful_check_output(self):
