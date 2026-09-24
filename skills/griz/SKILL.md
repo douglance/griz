@@ -71,8 +71,9 @@ parse match["text"], change the selected values, and return serialized text.
 For a caller-written Codex patch, replace match/replacement options with
 `--patch FILE --expected-files N --expected-edits N`; `--patch -` reads stdin.
 Patch paths resolve under ROOT; FILE resolves from the caller's directory.
-Caller-written JSON operation arrays use `--ops FILE` instead of `--patch FILE`,
-with the same expected file/edit counts; `--ops -` reads stdin. For example:
+JSON operation arrays use `--ops FILE` with the same counts; `--ops -` reads stdin.
+Pass both flags to combine a patch and operations in one batch: patch first,
+then operations. Only one input may read stdin. For example:
 
 ~~~json
 [{"op":"create","path":"new.txt","text":"hello\n"},
@@ -85,7 +86,8 @@ Read-only `find` takes no purpose or idempotency key. Its matches carry
 `path`, `text`, `range`, and `file_hash`; retain these in the caller program,
 build operations, and invoke the helper there. Do not add a round trip just to
 print and copy fingerprints. Supply a fingerprint or old text for byte ranges.
-Choose one input mode. The same check and guarded undo run afterward.
+Keep match/transform options separate from patch/ops input. The same check and
+guarded undo run afterward.
 
 The helper checks process status, JSON, verdicts, and IDs. A passed receipt
 includes the check result. On failure, inspect its stage and undo verdict;

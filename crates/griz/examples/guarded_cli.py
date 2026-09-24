@@ -231,29 +231,36 @@ def file_operations(options, matches, transform=None):
 
 
 def plan_from_ops(options, ops, file_count):
-    return plan_input(options, "--ops", json.dumps(ops), options.expected_matches, file_count)
+    return plan_input(options, [("--ops", json.dumps(ops))], options.expected_matches, file_count)
 
 
 def plan_supplied_input(options):
-    mode = "patch" if getattr(options, "patch", None) is not None else "ops"
-    path = getattr(options, mode)
-    try:
-        data = sys.stdin.buffer.read() if path == "-" else Path(path).read_bytes()
-        text = data.decode("utf-8")
-    except (OSError, UnicodeError) as error:
-        raise CommandFailure({
-            "stage": "plan", "outcome": "error", "reason": mode + " input: " + str(error),
-        }) from error
-    return plan_input(options, "--" + mode, text, options.expected_edits, options.expected_files)
+    inputs = []
+    for mode in ("patch", "ops"):
+        path = getattr(options, mode, None)
+        if path is None:
+            continue
+        try:
+            data = sys.stdin.buffer.read() if path == "-" else Path(path).read_bytes()
+            text = data.decode("utf-8")
+        except (OSError, UnicodeError) as error:
+            raise CommandFailure({
+                "stage": "plan", "outcome": "error", "reason": mode + " input: " + str(error),
+            }) from error
+        inputs.append(("--" + mode, text))
+    return plan_input(options, inputs, options.expected_edits, options.expected_files)
 
 
-def plan_input(options, mode, text, edit_count, file_count):
+def plan_input(options, inputs, edit_count, file_count):
     try:
         with tempfile.TemporaryDirectory(prefix="griz-input-") as directory:
-            payload = Path(directory) / "input.txt"
-            payload.write_text(text, encoding="utf-8")
+            arguments = []
+            for index, (mode, text) in enumerate(inputs):
+                payload = Path(directory) / ("input-" + str(index) + ".txt")
+                payload.write_text(text, encoding="utf-8")
+                arguments.extend([mode, "@" + str(payload)])
             return griz_command(options, "plan", [
-                "--root", options.root, mode, "@" + str(payload),
+                "--root", options.root, *arguments,
                 "--expect-edits", str(edit_count),
                 "--expect-files", str(file_count), "--expect-syntax", "clean",
                 *mutation_options(options, "plan"),
@@ -330,13 +337,18 @@ def validate_options(parser, options, transform=None):
     if not options.check:
         parser.error("give a check command")
     if options.patch is not None or options.ops is not None:
-        match_fields = ("path", "replace", "transform", "language", "expected_matches")
+        if options.patch == "-" and options.ops == "-":
+            parser.error("only one of patch and ops may read stdin")
+        match_fields = ("path", "replace", "transform", "language", "expected_matches",
+                        "literal", "regex", "pattern")
         if (any(value == "" for value in (options.patch, options.ops))
                 or any(getattr(options, name) is not None for name in match_fields)):
             parser.error("patch or ops input cannot accompany match or replacement options")
         if any(value is None or value < 1 for value in (options.expected_files, options.expected_edits)):
             parser.error("patches and ops require positive expected file and edit counts")
         return
+    if all(getattr(options, name) is None for name in ("literal", "regex", "pattern")):
+        parser.error("give a literal, regex, pattern, patch, or ops input")
     if options.expected_files is not None or options.expected_edits is not None:
         parser.error("expected file and edit counts require patch or ops input; use expected matches")
     if not options.path or options.expected_matches is None or options.expected_matches < 1:
@@ -352,12 +364,12 @@ def parse_options(arguments=None, transform=None):
     parser.add_argument("--root", required=True)
     parser.add_argument("--path", action="append",
                         help="One file or directory; repeat for more paths.")
-    query = parser.add_mutually_exclusive_group(required=True)
+    query = parser.add_mutually_exclusive_group()
     query.add_argument("--literal", help="Exact text to match.")
     query.add_argument("--regex", help="Regex to match; captures are available to a transform.")
     query.add_argument("--pattern", help="Structural pattern, such as legacy($ARG).")
-    query.add_argument("--patch", metavar="FILE", help="Codex patch file; - reads UTF-8 stdin.")
-    query.add_argument("--ops", metavar="FILE", help="JSON operation array file; - reads UTF-8 stdin.")
+    parser.add_argument("--patch", metavar="FILE", help="Codex patch file; - reads UTF-8 stdin.")
+    parser.add_argument("--ops", metavar="FILE", help="JSON operation array file; - reads UTF-8 stdin.")
     parser.add_argument("--language", help="Restrict structural matching to files in this language.")
     replacement = parser.add_mutually_exclusive_group()
     replacement.add_argument("--replace", help="Literal replacement text.")

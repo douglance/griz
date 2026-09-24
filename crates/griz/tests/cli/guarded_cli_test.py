@@ -821,6 +821,134 @@ class WorkflowTests(unittest.TestCase):
 
 
 
+
+    def combined_options(self):
+        patch_file = self.patch_options(
+            "*** Begin Patch\n*** Update File: sample file.txt\n"
+            "@@\n-oldName\n+intermediate\n*** End Patch\n", files=2, edits=3)
+        ops_file = self.ops_options(json.dumps([
+            {"op": "replace", "path": self.file.name, "find": "intermediate", "replace": "new_name"},
+            {"op": "create", "path": "created file.txt", "text": "created\n"},
+        ]), files=2, edits=3)
+        return patch_file, ops_file
+
+    def test_combined_inputs_order_once_and_replay(self):
+        self.combined_options()
+        staged = []
+        def intercept(stage, argv, kwargs):
+            if stage == "plan":
+                for flag in ("--patch", "--ops"):
+                    argument = argv[argv.index(flag) + 1]
+                    self.assertTrue(argument.startswith("@"))
+                    staged.append(Path(argument[1:]))
+                self.assertLess(sum(len(arg.encode()) for arg in argv), 4096)
+        result = self.workflow(intercept)
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(self.calls, ["plan", "apply", "check"])
+        self.assertEqual(self.file.read_text(), "new_name\n")
+        self.assertEqual((self.root / "created file.txt").read_text(), "created\n")
+        self.assertEqual(len(set(staged)), 2)
+        self.assertTrue(all(not path.exists() for path in staged))
+        replay = self.workflow()
+        self.assertEqual(replay["operation"], result["operation"])
+
+    def test_combined_inputs_cli_files_and_single_stdin(self):
+        patch_file, ops_file = self.combined_options()
+        for index, stream in enumerate((None, "patch", "ops")):
+            with self.subTest(stream=stream):
+                command = [
+                    sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+                    "--root", str(self.root),
+                    "--patch", "-" if stream == "patch" else str(patch_file),
+                    "--ops", "-" if stream == "ops" else str(ops_file),
+                    "--expected-files", "2", "--expected-edits", "3",
+                    "--key", f"combined-cli-{index}", "--check", *self.options.check,
+                ]
+                data = (patch_file if stream == "patch" else ops_file).read_bytes()
+                result = REAL_RUN(command, input=data, capture_output=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                receipt = json.loads(result.stdout)
+                self.assertEqual(self.file.read_text(), "new_name\n")
+                self.assertEqual((self.root / "created file.txt").read_text(), "created\n")
+                undo = REAL_RUN([BINARY, "undo", receipt["operation"], "--root", str(self.root),
+                                 "--purpose", "test", "--idempotency-key", f"combined-undo-{index}",
+                                 "--format", "json"], capture_output=True, text=True)
+                self.assertEqual(undo.returncode, 0, undo.stdout + undo.stderr)
+                self.assertEqual(self.file.read_text(), "oldName\n")
+                self.assertFalse((self.root / "created file.txt").exists())
+
+    def test_combined_inputs_reject_two_stdin_sources_before_reading(self):
+        arguments = ["--root", str(self.root), "--patch", "-", "--ops", "-",
+                     "--expected-files", "2", "--expected-edits", "3", "--key", "stdin",
+                     "--check", *self.options.check]
+        with patch.object(example.subprocess, "run") as invoked, patch("sys.stdin") as stdin:
+            stdin.buffer.read.side_effect = AssertionError("stdin read before validation")
+            with patch("sys.stderr", new=io.StringIO()) as stderr, self.assertRaises(SystemExit):
+                example.edit(arguments)
+            self.assertIn("only one", stderr.getvalue())
+            self.assertIn("stdin", stderr.getvalue())
+            invoked.assert_not_called()
+            stdin.buffer.read.assert_not_called()
+
+    def test_combined_inputs_invalid_second_payload_never_applies(self):
+        _, ops_file = self.combined_options()
+        for content in ("not json", b"\xff", None):
+            with self.subTest(content=content):
+                self.calls.clear()
+                if content is None:
+                    ops_file.unlink()
+                elif isinstance(content, bytes):
+                    ops_file.write_bytes(content)
+                else:
+                    ops_file.write_text(content)
+                result = self.workflow()
+                self.assert_stopped(result, "plan", ["plan"] if isinstance(content, str) else [])
+                self.assertFalse((self.root / "created file.txt").exists())
+
+    def test_combined_inputs_count_and_syntax_guards_never_apply(self):
+        for files, edits in ((1, 3), (2, 2)):
+            with self.subTest(files=files, edits=edits):
+                self.calls.clear()
+                self.combined_options()
+                self.options.expected_files = files
+                self.options.expected_edits = edits
+                self.options.key = f"combined-count-{files}-{edits}"
+                self.assert_stopped(self.workflow(), "plan", ["plan"])
+                self.assertFalse((self.root / "created file.txt").exists())
+        self.calls.clear()
+        _, ops_file = self.combined_options()
+        ops = json.loads(ops_file.read_text())
+        ops[1].update(path="bad.py", text="def broken(\n")
+        ops_file.write_text(json.dumps(ops))
+        self.options.key = "combined-syntax"
+        self.assert_stopped(self.workflow(), "plan", ["plan"])
+        self.assertFalse((self.root / "bad.py").exists())
+
+    def test_combined_inputs_stale_apply_never_runs_check(self):
+        self.combined_options()
+        def intercept(stage, argv, kwargs):
+            if stage == "apply":
+                self.file.write_text("outside\noldName\n")
+        result = self.workflow(intercept)
+        self.assertEqual(result["stage"], "apply", result)
+        self.assertEqual(result["outcome"], "error", result)
+        self.assertEqual(self.calls, ["plan", "apply"])
+        self.assertEqual(self.file.read_text(), "outside\noldName\n")
+        self.assertFalse((self.root / "created file.txt").exists())
+        self.assertFalse(self.marker.exists())
+
+    def test_combined_inputs_failed_check_restores_every_file(self):
+        self.file.write_text("# user's note\noldName\n")
+        self.combined_options()
+        self.options.check = [sys.executable, "-c", "raise SystemExit(17)"]
+        result = self.workflow()
+        self.assertEqual(result["outcome"], "failed", result)
+        self.assertEqual(result["check"]["exit_code"], 17)
+        self.assertEqual(result["undo"]["outcome"], "passed", result)
+        self.assertEqual(self.calls, ["plan", "apply", "check", "undo"])
+        self.assertEqual(self.file.read_text(), "# user's note\noldName\n")
+        self.assertFalse((self.root / "created file.txt").exists())
+
     def ops_options(self, text=None, files=2, edits=2):
         payload = self.root / "input ops.json"
         payload.write_text(text if text is not None else json.dumps([
