@@ -1,7 +1,19 @@
 # Compose griz in host Code Mode
 
+Use the calls below as the contract for this workflow. On apoc, submit the
+program directly to `codemode_execute`; routine schema discovery is unnecessary
+for these documented calls. Search for a specific method only when an option is
+missing here or the server reports a schema mismatch.
+
 Set `root` to the absolute project path. Keep intermediate matches and plans
-inside the program.
+inside the program. Batch independent context reads. When the requested change
+already specifies the paths and transformation, read those files with `find`
+inside the same program that constructs the edits. Return only the verdict and
+IDs; inspect matches or source text when choosing a transformation or diagnosing
+a failure requires them.
+
+If `codemode_execute` returns `status: "running"`, inspect that execution ID with
+`codemode_execution` until terminal. Do not submit the same edit as another run.
 
 ## Guards for direct calls
 
@@ -44,6 +56,19 @@ if (plan.outcome !== "passed") return { stage: "plan", ...plan };
 
 A `range` op needs no re-matching, and `expect_hash` refuses a file that changed
 since `find`.
+
+## New files and JSON transforms
+
+Add `{ op: "create", path: "new.txt", text: "hello\n" }` to the same `ops`
+array for a new file. Include it in the expected edit and file counts.
+
+For whole-file transforms, use `find` with `paths: ["data.json"]`,
+`regex: "(?s)\\A.*\\z"`, `limit: 1`, and `expect_matches: 1`. Each match
+contains `path`, `text`, `range`, and `file_hash`. Parse `m.text`, transform the
+value in the caller's JavaScript, then set `replace` to
+`JSON.stringify(value, null, 2) + "\n"` in the guarded range operation above.
+Read all required input files in that program; keep their text and fingerprints
+there instead of printing and copying them through another turn.
 
 ## Apply, check, roll back
 
