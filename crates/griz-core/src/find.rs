@@ -4,6 +4,10 @@
 //! an ast-grep pattern such as `foo($A, $$$REST)`. Every query answers with the
 //! same match shape, so an edit built from one kind works for the other.
 
+mod summary;
+
+pub use summary::{FileSummary, FindFilesPage, find_files};
+
 use crate::{
     ByteRange, content_hash,
     find_hits::{FileHits, Matcher},

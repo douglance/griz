@@ -36,7 +36,7 @@ mod workspace_edit_ops;
 
 pub use definitions::{DiffItem, ItemChange, diff_items};
 pub use diff::{FileDiff, render_diff};
-pub use find::{FindPage, FindQuery, Match, find};
+pub use find::{FileSummary, FindFilesPage, FindPage, FindQuery, Match, find, find_files};
 pub use hash::content_hash;
 pub use merge::{MergeOutcome, three_way};
 pub use model::{

@@ -7,7 +7,7 @@ use crate::{
     lines::{Address, address, merge_lines},
     verdict::{Outcome, unmet},
 };
-use griz_core::{FindQuery, content_hash, find};
+use griz_core::{FindQuery, content_hash, find, find_files};
 use incurs::command::{CommandDef, TypedContext, TypedResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -82,10 +82,14 @@ struct FindOptions {
     /// Language for a structural pattern: rust, typescript, tsx, javascript, python, go, or swift.
     /// Defaults to each file's extension.
     language: Option<String>,
-    /// Matches to skip, for paging.
+    /// Return `file_matches` with path, count, and `file_hash` instead of individual matches.
+    /// Offset and limit then count matching files; expect-matches still counts all matches.
+    #[incurs(default = false)]
+    files_only: bool,
+    /// Matches to skip, or matching files with files-only, for paging.
     #[incurs(default = 0)]
     offset: usize,
-    /// Most matches to return.
+    /// Most matches to return, or matching files with files-only.
     #[incurs(default = 200)]
     limit: usize,
     /// Total matches expected across every file; the outcome fails otherwise.
@@ -106,11 +110,22 @@ pub fn find_command() -> CommandDef {
             run_find(ctx.options).unwrap_or_else(CmdError::result)
         },
     )
-    .description("Find literal or regex matches across files. Each match carries its byte range and file fingerprint, so a program can edit exactly what it found.")
+    .description("Find literal, regex, or structural matches with byte ranges and file fingerprints. Use files-only for per-file counts and fingerprints instead of individual matches.")
     .examples(crate::usage::example("--root /path/to/repo --paths \"src one.rs\" --paths \"src two.rs\" --literal oldName --expect-matches 2 --format json", "Find an expected number of matches."))
     .hint(crate::usage::PATHS)
     .mcp(annotations::read_only())
     .done()
+}
+
+fn find_response(query: &FindQuery, files_only: bool) -> Result<(Value, usize), CmdError> {
+    let (body, total) = if files_only {
+        let page = find_files(query).map_err(CmdError::invalid)?;
+        (serde_json::to_value(&page), page.total)
+    } else {
+        let page = find(query).map_err(CmdError::invalid)?;
+        (serde_json::to_value(&page), page.total)
+    };
+    Ok((body.map_err(|e| CmdError::invalid(e.to_string()))?, total))
 }
 
 fn run_find(options: FindOptions) -> Result<TypedResult<Value>, CmdError> {
@@ -130,12 +145,11 @@ fn run_find(options: FindOptions) -> Result<TypedResult<Value>, CmdError> {
         limit: options.limit,
         within: options.within.unwrap_or_default(),
     };
-    let page = find(&query).map_err(CmdError::invalid)?;
-    let mut body = serde_json::to_value(&page).map_err(|e| CmdError::invalid(e.to_string()))?;
+    let (mut body, total) = find_response(&query, options.files_only)?;
     let Some(expected) = options.expect_matches else {
         return Ok(TypedResult::ok(body));
     };
-    let miss = unmet("matches", Some(expected), page.total);
+    let miss = unmet("matches", Some(expected), total);
     let outcome = if miss.is_some() {
         Outcome::Failed
     } else {

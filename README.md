@@ -139,7 +139,7 @@ check failure returns the undo verdict too; undo can refuse later file changes.
 | Command | Kind | Does |
 |---|---|---|
 | `read PATH` | read | Numbered lines and fingerprint; `--grep`, `--lines`. |
-| `find` | read | Literal, regex, or structural (`--pattern 'foo($A, $$$REST)'`) matches with byte ranges, captures, fingerprints; `--within comment`; honors `.gitignore`; `--expect-matches`. |
+| `find` | read | Literal, regex, or structural (`--pattern 'foo($A, $$$REST)'`) matches with byte ranges, captures, fingerprints; `--within comment`; honors `.gitignore`; `--expect-matches`; `--files-only` returns paged file counts and fingerprints. |
 | `plan` | records | Operations (`--ops`), Codex patch text (`--patch`, `@file`), or an LSP `--workspace-edit` into a plan id, with parse facts. |
 | `select PLAN` | records | A new plan from part of another, by path, edit id, or confidence. |
 | `diff ID` | read | Unified diff of a plan or operation, with the named items it changes; `--grep` or `--lines`. |

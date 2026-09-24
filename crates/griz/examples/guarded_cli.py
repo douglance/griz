@@ -144,6 +144,8 @@ def plan_edit(options, transform=None):
     if any(getattr(options, mode, None) is not None for mode in ("patch", "ops")):
         return plan_supplied_input(options), options.expected_files
     paths = [arg for path in options.path for arg in ("--paths", path)]
+    if getattr(options, "literal", None) is not None and transform is None:
+        return plan_literal(options, paths)
     found = griz_command(options, "find", [
         "--root", options.root, *paths, *query_arguments(options),
         "--limit", str(options.expected_matches),
@@ -166,6 +168,50 @@ def plan_edit(options, transform=None):
     return plan_from_ops(options, ops, file_count), file_count
 
 
+
+def plan_literal(options, paths):
+    found = griz_command(options, "find", [
+        "--root", options.root, *paths, *query_arguments(options), "--files-only",
+        "--limit", str(options.expected_matches),
+        "--expect-matches", str(options.expected_matches),
+    ])
+    try:
+        ops = summary_operations(options, found)
+    except (KeyError, TypeError, ValueError) as error:
+        raise CommandFailure({
+            "stage": "find", "outcome": "error",
+            "reason": "find returned malformed file summaries", "response": found,
+        }) from error
+    return plan_from_ops(options, ops, len(ops)), len(ops)
+
+
+def summary_operations(options, found):
+    files = found.get("file_matches")
+    if (not isinstance(files, list) or type(found.get("files")) is not int
+            or len(files) != found["files"] or found.get("next") is not None
+            or type(found.get("total")) is not int
+            or found["total"] != options.expected_matches):
+        raise ValueError("find did not return the complete expected file page")
+    seen, ops, total = set(), [], 0
+    for file in files:
+        path, fingerprint, count = file["path"], file["file_hash"], file["count"]
+        if not isinstance(path, str) or not path or path in seen:
+            raise ValueError("file path is empty, invalid, or repeated")
+        if not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+            raise ValueError("file fingerprint is missing or invalid")
+        if type(count) is not int or count < 1:
+            raise ValueError("file match count is invalid")
+        seen.add(path)
+        total += count
+        ops.append({
+            "op": "replace", "path": path, "find": {"text": options.literal},
+            "replace": options.replace, "occurrence": "all", "expect_hash": fingerprint,
+        })
+    if total != options.expected_matches:
+        raise ValueError("file counts differ from the expected total")
+    return ops
+
+
 def file_operations(options, matches, transform=None):
     fingerprints = {}
     for match in matches:
@@ -181,12 +227,7 @@ def file_operations(options, matches, transform=None):
         if path in fingerprints and fingerprints[path] != fingerprint:
             raise ValueError("one file has inconsistent fingerprints")
         fingerprints[path] = fingerprint
-    if transform is not None or getattr(options, "literal", None) is None:
-        return [transformed_operation(options, match, transform) for match in matches]
-    return [{
-        "op": "replace", "path": path, "find": {"text": options.literal},
-        "replace": options.replace, "occurrence": "all", "expect_hash": fingerprint,
-    } for path, fingerprint in fingerprints.items()]
+    return [transformed_operation(options, match, transform) for match in matches]
 
 
 def plan_from_ops(options, ops, file_count):

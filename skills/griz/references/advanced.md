@@ -27,6 +27,19 @@ Use exact argument arrays rather than composing a command string.
 Mutations answer `{id, outcome}`. Use `verbosity: "trace"` or `griz.get({ id })`
 for a full record. A missed anchor's nearest text is in `problems[].nearest`.
 
+## File summaries
+
+Use `griz find --files-only --literal oldName --root ROOT --format json`
+or `griz.find({ root, literal: "oldName", files_only: true })` when the caller
+needs matching files rather than individual spans. The result has
+`file_matches: [{ path, count, file_hash }]`, `total`, `files`, and `next`.
+`offset`, `limit`, and `next` count matching files in this mode.
+`total` and `expect_matches` still count individual matches across all files,
+including files outside the returned page. Search filters remain the same.
+
+The guarded CLI helper uses this mode for constant literal replacements and
+retains each file's fingerprint in the plan. Callbacks still receive full matches.
+
 ## Match by shape
 
 `griz.find({ root, pattern: "foo($A, $$$REST)" })` matches syntax, not text,

@@ -48,7 +48,7 @@ class WorkflowTests(unittest.TestCase):
         )
         self.calls = []
 
-    def workflow(self, intercept=None):
+    def workflow(self, intercept=None, transform=None):
         def invoke(argv, **kwargs):
             stage = argv[1] if argv[0] == BINARY else "check"
             self.calls.append(stage)
@@ -58,7 +58,7 @@ class WorkflowTests(unittest.TestCase):
                     return result
             return REAL_RUN(argv, **kwargs)
         with patch.object(example.subprocess, "run", side_effect=invoke):
-            return example.run(self.options)
+            return example.run(self.options, transform)
 
     def assert_stopped(self, result, stage, calls):
         self.assertEqual(result["stage"], stage, result)
@@ -198,6 +198,123 @@ class WorkflowTests(unittest.TestCase):
                     invoked.assert_not_called()
         self.assertEqual(self.file.read_text(), "oldName\n")
 
+
+    def test_file_summary_counts_hashes_and_file_paging(self):
+        import hashlib
+        self.file.write_text("oldName\n" * 3)
+        (self.root / "a.txt").write_text("oldName oldName\n")
+        (self.root / "zero.txt").write_text("unmatched\n")
+        argv = [BINARY, "find", "--root", str(self.root), "--literal", "oldName",
+                "--files-only", "--limit", "1", "--expect-matches", "5", "--format", "json"]
+        first = REAL_RUN(argv, capture_output=True, text=True)
+        self.assertEqual(first.returncode, 0, first.stdout)
+        body = json.loads(first.stdout)
+        self.assertNotIn("matches", body)
+        self.assertEqual((body["total"], body["files"], body["next"]), (5, 2, 1))
+        self.assertEqual(body["file_matches"], [{
+            "path": str((self.root / "a.txt").resolve()), "count": 2,
+            "file_hash": hashlib.sha256(b"oldName oldName\n").hexdigest(),
+        }])
+        second = REAL_RUN(argv + ["--offset", "1"], capture_output=True, text=True)
+        self.assertEqual(second.returncode, 0, second.stdout)
+        body = json.loads(second.stdout)
+        self.assertEqual((body["total"], body["files"], body["next"]), (5, 2, None))
+        self.assertEqual(body["file_matches"], [{
+            "path": str(self.file.resolve()), "count": 3,
+            "file_hash": hashlib.sha256(b"oldName\n" * 3).hexdigest(),
+        }])
+        zero = REAL_RUN([arg if arg != "1" else "0" for arg in argv],
+                        capture_output=True, text=True)
+        self.assertEqual(zero.returncode, 0, zero.stdout)
+        self.assertEqual(json.loads(zero.stdout)["file_matches"], [])
+        self.assertEqual(json.loads(zero.stdout)["next"], 0)
+        empty = REAL_RUN(argv + ["--offset", "100"], capture_output=True, text=True)
+        self.assertEqual(empty.returncode, 0, empty.stdout)
+        self.assertEqual(json.loads(empty.stdout)["file_matches"], [])
+
+    def test_file_summary_preserves_scope_glob_and_query_modes(self):
+        (self.root / "calls.ts").write_text('legacy(1); obj.legacy(2); // legacy(3)\n')
+        for selector, count in [
+            (["--pattern", "legacy($A)"], 1),
+            (["--regex", r"legacy\((\d)\)"], 3),
+            (["--literal", "legacy", "--within", "comment"], 1),
+        ]:
+            with self.subTest(selector=selector):
+                r = REAL_RUN([BINARY, "find", "--root", str(self.root),
+                              "--glob", "*.ts", "--files-only", *selector,
+                              "--expect-matches", str(count), "--format", "json"],
+                             capture_output=True, text=True)
+                self.assertEqual(r.returncode, 0, r.stdout)
+                body = json.loads(r.stdout)
+                self.assertEqual((body["total"], body["files"]), (count, 1))
+                self.assertEqual(body["file_matches"][0]["count"], count)
+                self.assertEqual(body["file_matches"][0]["path"], str((self.root / "calls.ts").resolve()))
+
+    def test_file_summary_count_mismatch_still_fails(self):
+        r = REAL_RUN([BINARY, "find", "--root", str(self.root),
+                      "--files-only", "--literal", "oldName",
+                      "--expect-matches", "2", "--format", "json"],
+                     capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0)
+        body = json.loads(r.stdout)
+        self.assertEqual(body["outcome"], "failed")
+        self.assertEqual((body["total"], body["file_matches"][0]["count"]), (1, 1))
+
+    def test_literal_workflow_requests_file_summaries(self):
+        self.file.write_text("oldName\n" * 3000)
+        self.options.expected_matches = 3000
+        def intercept(stage, argv, kwargs):
+            if stage == "find":
+                self.assertIn("--files-only", argv)
+                output = REAL_RUN(argv, **kwargs)
+                self.assertLess(len(output.stdout), 1024)
+                body = json.loads(output.stdout)
+                self.assertEqual(body["file_matches"][0]["count"], 3000)
+                return output
+        result = self.workflow(intercept)
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(self.file.read_text(), "new_name\n" * 3000)
+
+
+    def test_literal_summary_refuses_incomplete_or_malformed_pages(self):
+        corruptions = [
+            ("total", 2), ("total", True), ("files", 2), ("files", True),
+            ("next", 0), ("file_matches", []), ("file_matches", None),
+            ("count", 0), ("count", -1), ("count", True), ("count", "1"),
+            ("path", ""), ("path", None), ("duplicate", None),
+        ]
+        for field, value in corruptions:
+            with self.subTest(field=field, value=value):
+                self.calls.clear()
+                def intercept(stage, argv, kwargs):
+                    if stage == "find":
+                        output = REAL_RUN(argv, **kwargs)
+                        body = json.loads(output.stdout)
+                        if field in ("count", "path"):
+                            body["file_matches"][0][field] = value
+                        elif field == "duplicate":
+                            body["file_matches"].append(dict(body["file_matches"][0]))
+                            body["files"] = 2
+                        else:
+                            body[field] = value
+                        output.stdout = json.dumps(body).encode()
+                        return output
+                result = self.workflow(intercept)
+                self.assert_stopped(result, "find", ["find"])
+                self.assertIn("response", result)
+
+    def test_literal_callback_refuses_unexpected_match_text(self):
+        def intercept(stage, argv, kwargs):
+            if stage == "find":
+                self.assertNotIn("--files-only", argv)
+                output = REAL_RUN(argv, **kwargs)
+                body = json.loads(output.stdout)
+                body["matches"][0]["text"] = "different"
+                output.stdout = json.dumps(body).encode()
+                return output
+        result = self.workflow(intercept, transform=lambda match: "new_name")
+        self.assert_stopped(result, "find", ["find"])
+
     def test_success_and_repeated_paths(self):
         second = self.root / "another file.txt"
         second.write_text("oldName\n")
@@ -296,19 +413,19 @@ class WorkflowTests(unittest.TestCase):
                 body["matches"][1]["file_hash"] = "f" * 64
                 output.stdout = json.dumps(body).encode()
                 return output
-        result = self.workflow(intercept)
+        result = self.workflow(intercept, transform=lambda match: "new_name")
         self.assertEqual(result["stage"], "find", result)
         self.assertEqual(result["outcome"], "error", result)
         self.assertEqual(self.calls, ["find"])
         self.assertEqual(self.file.read_text(), "oldName\n" * 2)
         self.assertFalse(self.marker.exists())
 
-    def test_grouping_refuses_unexpected_match_text(self):
+    def test_grouping_refuses_unexpected_summary_count(self):
         def intercept(stage, argv, kwargs):
             if stage == "find":
                 output = REAL_RUN(argv, **kwargs)
                 body = json.loads(output.stdout)
-                body["matches"][0]["text"] = "different"
+                body["file_matches"][0]["count"] = 2
                 output.stdout = json.dumps(body).encode()
                 return output
         result = self.workflow(intercept)
@@ -322,7 +439,7 @@ class WorkflowTests(unittest.TestCase):
                     if stage == "find":
                         output = REAL_RUN(argv, **kwargs)
                         body = json.loads(output.stdout)
-                        body["matches"][0]["file_hash"] = fingerprint
+                        body["file_matches"][0]["file_hash"] = fingerprint
                         output.stdout = json.dumps(body).encode()
                         return output
                 result = self.workflow(intercept)
@@ -1053,6 +1170,22 @@ class WorkflowTests(unittest.TestCase):
                               capture_output=True, text=True)
         self.assertEqual(cli_record.returncode, 0, cli_record.stderr)
         self.assertEqual(json.loads(cli_record.stdout), self.mcp("get", {"id": operation}))
+
+
+    def test_file_summary_cli_and_mcp_agree(self):
+        self.file.write_text("oldName\n" * 3)
+        (self.root / "a.txt").write_text("oldName oldName\n")
+        cli = example.griz_command(self.options, "find", [
+            "--root", str(self.root), "--literal", "oldName", "--files-only",
+            "--offset", "1", "--limit", "1", "--expect-matches", "5",
+        ])
+        mcp = self.mcp("find", {
+            "root": str(self.root), "literal": "oldName", "files_only": True,
+            "offset": 1, "limit": 1, "expect_matches": 5,
+        })
+        self.assertEqual(cli, mcp)
+        self.assertEqual((mcp["total"], mcp["files"]), (5, 2))
+        self.assertEqual(mcp["file_matches"][0]["count"], 3)
 
     def test_rejected_spellings_stay_rejected(self):
         cases = [
