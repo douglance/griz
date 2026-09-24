@@ -102,7 +102,7 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
                 let file_syntax = std::mem::take(&mut plan.file_syntax);
                 let record = store.save_plan(&purpose, ops.clone(), plan)?;
                 let rendered =
-                    render::with_syntax(render::plan(&record, expect), syntax, &file_syntax);
+                    render::with_syntax(render::plan(&record, expect, level), syntax, &file_syntax);
                 Ok(render::expect_clean_syntax(rendered, syntax, expect_clean))
             },
             |store, id, outcome, _| {
@@ -111,7 +111,7 @@ async fn plan(options: PlanOptions) -> Result<(Value, Outcome), CmdError> {
                 let file_syntax = griz_core::annotate(&changes);
                 let syntax = griz_core::plan_syntax(&file_syntax);
                 let rendered =
-                    render::with_syntax(render::plan(&record, expect), syntax, &file_syntax);
+                    render::with_syntax(render::plan(&record, expect, level), syntax, &file_syntax);
                 let rendered = render::expect_clean_syntax(rendered, syntax, expect_clean);
                 Ok(rendered.with_outcome(outcome))
             },
@@ -188,10 +188,12 @@ async fn select(id: String, options: SelectOptions) -> Result<(Value, Outcome), 
                 Ok(render::plan(
                     &store.select(&id, &selection, &purpose)?,
                     PlanExpect::default(),
+                    level,
                 ))
             },
             |store, id, outcome, _| {
-                Ok(render::plan(&store.plan(id)?, PlanExpect::default()).with_outcome(outcome))
+                Ok(render::plan(&store.plan(id)?, PlanExpect::default(), level)
+                    .with_outcome(outcome))
             },
         )
     })

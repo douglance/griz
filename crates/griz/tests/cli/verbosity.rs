@@ -146,3 +146,58 @@ fn absorb_verbosity_preserves_success_and_skipped_file_facts() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn fresh_plan_verbosity_keeps_requested_payloads() -> TestResult {
+    let griz = workspace()?;
+    for (level, summary, detail, record) in [
+        ("off", false, false, false),
+        ("error", false, false, false),
+        ("warn", false, false, false),
+        ("info", true, false, false),
+        ("debug", true, true, false),
+        ("trace", true, true, true),
+    ] {
+        let run = griz.run(&[
+            "plan",
+            "--ops",
+            OPS,
+            "--purpose",
+            "fresh plan",
+            "--idempotency-key",
+            level,
+            "--verbosity",
+            level,
+        ])?;
+        assert_eq!(run.code, Some(0));
+        assert_eq!(run.json["outcome"], "passed");
+        assert!(run.json.get("replayed").is_none());
+        assert_eq!(run.json.get("summary").is_some(), summary);
+        assert_eq!(run.json.get("detail").is_some(), detail);
+        assert_eq!(run.json.get("ops").is_some(), record);
+        assert_plan_payloads(&run.json);
+    }
+    assert_eq!(griz.read("a.rs")?, "fn old() {}\n");
+    Ok(())
+}
+
+fn assert_plan_payloads(value: &Value) {
+    if let Some(summary) = value.get("summary") {
+        assert_eq!(summary["files"], 1);
+        assert_eq!(summary["edits"], 1);
+        assert_eq!(summary["syntax"], "clean");
+    }
+    if let Some(detail) = value.get("detail") {
+        assert_eq!(detail["edits"].as_array().map(Vec::len), Some(1));
+        assert!(detail["files"][0]["syntax"].is_object());
+    }
+    if value.get("ops").is_some() {
+        assert_plan_record(value);
+    }
+}
+
+fn assert_plan_record(value: &Value) {
+    assert_eq!(value["ops"][0]["replace"], "new");
+    assert_eq!(value["purpose"], "fresh plan");
+    assert_eq!(value["syntax"], "clean");
+}

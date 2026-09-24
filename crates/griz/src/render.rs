@@ -1,6 +1,6 @@
 //! Turns stored plans and operations into verdicts.
 
-use crate::verdict::{Outcome, Rendered, unmet};
+use crate::verdict::{Outcome, Rendered, Verbosity, unmet};
 use griz_core::{ChangeKind, Confidence, FileSyntax, PlanSyntax, Problem, ProblemKind};
 use griz_store::{Absorbed, Operation, OperationState, PlanRecord};
 use serde_json::{Value, json};
@@ -20,7 +20,7 @@ pub struct PlanExpect {
 
 /// Renders a plan, judging it against `expect`.
 #[must_use]
-pub fn plan(record: &PlanRecord, expect: PlanExpect) -> Rendered {
+pub fn plan(record: &PlanRecord, expect: PlanExpect, level: Verbosity) -> Rendered {
     let (outcome, reason) = if let Some(problem) = record.problems.first() {
         (
             Outcome::Error,
@@ -34,12 +34,17 @@ pub fn plan(record: &PlanRecord, expect: PlanExpect) -> Rendered {
             None => (Outcome::Passed, None),
         }
     };
-    plan_with(record, outcome, reason)
+    plan_with(record, outcome, reason, level)
 }
 
 /// Renders a plan with a known outcome, as when replaying a receipt.
 #[must_use]
-pub fn plan_with(record: &PlanRecord, outcome: Outcome, reason: Option<String>) -> Rendered {
+pub fn plan_with(
+    record: &PlanRecord,
+    outcome: Outcome,
+    reason: Option<String>,
+    level: Verbosity,
+) -> Rendered {
     let count = |kind| record.files.iter().filter(|file| file.kind == kind).count();
     let confident = |level| {
         record
@@ -52,23 +57,35 @@ pub fn plan_with(record: &PlanRecord, outcome: Outcome, reason: Option<String>) 
         id: record.id.clone(),
         outcome,
         reason,
-        summary: json!({
-            "files": record.files.len(),
-            "edits": record.edits.len(),
-            "created": count(ChangeKind::Create),
-            "deleted": count(ChangeKind::Delete),
-            "problems": record.problems.len(),
-            "confidence": {
-                "machine": confident(Confidence::Machine),
-                "maybe": confident(Confidence::Maybe),
-            },
-        }),
-        detail: json!({
-            "edits": record.edits,
-            "problems": record.problems,
-            "files": record.files.iter().map(|f| json!({ "path": f.path, "kind": f.kind })).collect::<Vec<_>>(),
-        }),
-        record: to_value(record),
+        summary: if level >= Verbosity::Info {
+            json!({
+                "files": record.files.len(),
+                "edits": record.edits.len(),
+                "created": count(ChangeKind::Create),
+                "deleted": count(ChangeKind::Delete),
+                "problems": record.problems.len(),
+                "confidence": {
+                    "machine": confident(Confidence::Machine),
+                    "maybe": confident(Confidence::Maybe),
+                },
+            })
+        } else {
+            Value::Null
+        },
+        detail: if level >= Verbosity::Debug {
+            json!({
+                "edits": record.edits,
+                "problems": record.problems,
+                "files": record.files.iter().map(|f| json!({ "path": f.path, "kind": f.kind })).collect::<Vec<_>>(),
+            })
+        } else {
+            Value::Null
+        },
+        record: if level == Verbosity::Trace {
+            to_value(record)
+        } else {
+            Value::Null
+        },
         replay_data: None,
     }
 }
@@ -82,8 +99,12 @@ pub fn with_syntax(
     syntax: PlanSyntax,
     file_syntax: &BTreeMap<PathBuf, FileSyntax>,
 ) -> Rendered {
-    rendered.summary["syntax"] = json!(syntax);
-    rendered.record["syntax"] = json!(syntax);
+    if let Some(summary) = rendered.summary.as_object_mut() {
+        summary.insert("syntax".into(), json!(syntax));
+    }
+    if let Some(record) = rendered.record.as_object_mut() {
+        record.insert("syntax".into(), json!(syntax));
+    }
     attach_file_syntax(&mut rendered.detail, file_syntax);
     attach_file_syntax(&mut rendered.record, file_syntax);
     rendered
