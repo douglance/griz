@@ -2,7 +2,7 @@
 
 use crate::{
     execute::Target,
-    write::{StagedFile, failpoint, failpoint_result, stage},
+    write::{StagedFile, failpoint, failpoint_result, stage_with_id},
 };
 use std::{io, thread};
 
@@ -11,13 +11,15 @@ type Worker<'scope> = io::Result<thread::ScopedJoinHandle<'scope, io::Result<Sta
 
 /// Waits for every stage and its sync before returning any batch to the journal.
 pub(crate) fn stage_all(targets: &[Target]) -> io::Result<Staged> {
+    // Preserve case equivalence in the names checked by exclusive staging.
+    let batch = uuid::Uuid::now_v7();
     let writes = targets
         .iter()
         .filter(|target| target.text.is_some())
         .take(32)
         .count();
     if writes < 32 {
-        return stage_slice(targets, 0);
+        return stage_slice(targets, 0, batch);
     }
     let size = targets.len().div_ceil(4);
     thread::scope(|scope| {
@@ -25,7 +27,8 @@ pub(crate) fn stage_all(targets: &[Target]) -> io::Result<Staged> {
             .chunks(size)
             .enumerate()
             .map(|(index, chunk)| {
-                thread::Builder::new().spawn_scoped(scope, move || stage_slice(chunk, index * size))
+                thread::Builder::new()
+                    .spawn_scoped(scope, move || stage_slice(chunk, index * size, batch))
             })
             .collect();
         let results: Vec<_> = workers.into_iter().map(join_worker).collect();
@@ -40,13 +43,13 @@ fn join_worker(worker: Worker<'_>) -> io::Result<Staged> {
         .map_err(|_| io::Error::other("staging worker panicked"))?
 }
 
-fn stage_slice(targets: &[Target], start: usize) -> io::Result<Staged> {
+fn stage_slice(targets: &[Target], start: usize, batch: uuid::Uuid) -> io::Result<Staged> {
     let mut staged = Vec::with_capacity(targets.len());
     for (offset, target) in targets.iter().enumerate() {
         let temp = target
             .text
             .as_deref()
-            .map(|text| stage(&target.path, text))
+            .map(|text| stage_with_id(&target.path, text, batch))
             .transpose()?;
         staged.push(temp);
         mid_stage_failpoint(start + offset)?;

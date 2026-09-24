@@ -28,16 +28,14 @@ pub fn failpoint_result(name: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// A temporary sibling of `path`, with a fresh identifier for each write.
-#[must_use]
-pub fn temp_sibling(path: &Path) -> PathBuf {
-    let name = path
-        .file_name()
-        .map_or_else(|| "griz".into(), |name| name.to_string_lossy().into_owned());
-    path.with_file_name(format!(
-        ".{name}.griz-{}.tmp",
-        uuid::Uuid::now_v7().simple()
-    ))
+fn temp_sibling(path: &Path, batch: uuid::Uuid) -> PathBuf {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(
+        path.file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("griz")),
+    );
+    name.push(format!(".griz-{}.tmp", batch.simple()));
+    path.with_file_name(name)
 }
 
 /// Owns a temporary file until rename, with best-effort cleanup on drop.
@@ -71,12 +69,21 @@ impl Drop for StagedFile {
 /// # Errors
 /// Returns an error when the directory or file cannot be written.
 pub fn stage(path: &Path, text: &str) -> std::io::Result<StagedFile> {
+    stage_with_id(path, text, uuid::Uuid::now_v7())
+}
+
+pub(crate) fn stage_with_id(
+    path: &Path,
+    text: &str,
+    batch: uuid::Uuid,
+) -> std::io::Result<StagedFile> {
     let permissions = existing_permissions(path)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let temp = temp_sibling(path);
-    let mut file = create_staged(&temp, permissions.as_ref())?;
+    let temp = temp_sibling(path, batch);
+    let mut file =
+        create_staged(&temp, permissions.as_ref()).map_err(|error| stage_error(path, error))?;
     let staged = StagedFile {
         path: temp,
         committed: false,
@@ -86,6 +93,19 @@ pub fn stage(path: &Path, text: &str) -> std::io::Result<StagedFile> {
     drop(file);
     result?;
     Ok(staged)
+}
+
+fn stage_error(path: &Path, error: std::io::Error) -> std::io::Error {
+    if error.kind() == std::io::ErrorKind::AlreadyExists {
+        return std::io::Error::new(
+            error.kind(),
+            format!(
+                "staging collision for {}; check destination names",
+                path.display()
+            ),
+        );
+    }
+    error
 }
 
 fn write_staged(
