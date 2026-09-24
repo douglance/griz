@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply caller matches or Codex patches with one guarded edit/check workflow.
+"""Apply caller matches, operations, or Codex patches with a guarded workflow.
 
 Checks declared edit/file counts, file fingerprints, and planned syntax before
 applying, then runs the supplied check once. A passed outcome means the edit
@@ -141,8 +141,8 @@ def transformed_operation(options, match, transform):
 
 
 def plan_edit(options, transform=None):
-    if getattr(options, "patch", None) is not None:
-        return plan_patch(options), options.expected_files
+    if any(getattr(options, mode, None) is not None for mode in ("patch", "ops")):
+        return plan_supplied_input(options), options.expected_files
     paths = [arg for path in options.path for arg in ("--paths", path)]
     found = griz_command(options, "find", [
         "--root", options.root, *paths, *query_arguments(options),
@@ -193,15 +193,17 @@ def plan_from_ops(options, ops, file_count):
     return plan_input(options, "--ops", json.dumps(ops), options.expected_matches, file_count)
 
 
-def plan_patch(options):
+def plan_supplied_input(options):
+    mode = "patch" if getattr(options, "patch", None) is not None else "ops"
+    path = getattr(options, mode)
     try:
-        data = sys.stdin.buffer.read() if options.patch == "-" else Path(options.patch).read_bytes()
+        data = sys.stdin.buffer.read() if path == "-" else Path(path).read_bytes()
         text = data.decode("utf-8")
     except (OSError, UnicodeError) as error:
         raise CommandFailure({
-            "stage": "plan", "outcome": "error", "reason": "patch input: " + str(error),
+            "stage": "plan", "outcome": "error", "reason": mode + " input: " + str(error),
         }) from error
-    return plan_input(options, "--patch", text, options.expected_edits, options.expected_files)
+    return plan_input(options, "--" + mode, text, options.expected_edits, options.expected_files)
 
 
 def plan_input(options, mode, text, edit_count, file_count):
@@ -280,20 +282,22 @@ def edit(arguments, *, transform=None):
 def validate_options(parser, options, transform=None):
     if transform is not None and (
         not callable(transform)
-        or any(value is not None for value in (options.replace, options.transform, options.patch))
+        or any(value is not None for value in (
+            options.replace, options.transform, options.patch, options.ops))
     ):
-        parser.error("callback must be callable and cannot accompany replace, transform, or patch")
+        parser.error("callback must be callable and cannot accompany replace, transform, patch, or ops")
     if not options.check:
         parser.error("give a check command")
-    if options.patch is not None:
+    if options.patch is not None or options.ops is not None:
         match_fields = ("path", "replace", "transform", "language", "expected_matches")
-        if not options.patch or any(getattr(options, name) is not None for name in match_fields):
-            parser.error("patch input cannot be combined with match or replacement options")
+        if (any(value == "" for value in (options.patch, options.ops))
+                or any(getattr(options, name) is not None for name in match_fields)):
+            parser.error("patch or ops input cannot accompany match or replacement options")
         if any(value is None or value < 1 for value in (options.expected_files, options.expected_edits)):
-            parser.error("patches require positive expected file and edit counts")
+            parser.error("patches and ops require positive expected file and edit counts")
         return
     if options.expected_files is not None or options.expected_edits is not None:
-        parser.error("expected file and edit counts are patch-only; use expected matches")
+        parser.error("expected file and edit counts require patch or ops input; use expected matches")
     if not options.path or options.expected_matches is None or options.expected_matches < 1:
         parser.error("give paths and a positive match count")
     if options.replace is None and options.transform is None and transform is None:
@@ -312,6 +316,7 @@ def parse_options(arguments=None, transform=None):
     query.add_argument("--regex", help="Regex to match; captures are available to a transform.")
     query.add_argument("--pattern", help="Structural pattern, such as legacy($ARG).")
     query.add_argument("--patch", metavar="FILE", help="Codex patch file; - reads UTF-8 stdin.")
+    query.add_argument("--ops", metavar="FILE", help="JSON operation array file; - reads UTF-8 stdin.")
     parser.add_argument("--language", help="Restrict structural matching to files in this language.")
     replacement = parser.add_mutually_exclusive_group()
     replacement.add_argument("--replace", help="Literal replacement text.")
@@ -319,8 +324,8 @@ def parse_options(arguments=None, transform=None):
                              help="Caller Python defining replace(match) -> str; - reads stdin. "
                                   "Return text only. Match has text, vars, captures, path, and byte range.")
     parser.add_argument("--expected-matches", type=int)
-    parser.add_argument("--expected-files", type=int, help="Required positive file count for patches.")
-    parser.add_argument("--expected-edits", type=int, help="Required positive edit count for patches.")
+    parser.add_argument("--expected-files", type=int, help="Required positive file count for patches or ops.")
+    parser.add_argument("--expected-edits", type=int, help="Required positive edit count for patches or ops.")
     parser.add_argument("--key", required=True,
                         help="Stable identity for this attempt; new edits need new keys.")
     parser.add_argument("--griz", default="griz", help="griz executable to invoke.")

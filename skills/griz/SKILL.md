@@ -60,7 +60,7 @@ with the complete receipt in `.report` and as compact JSON in the exception text
 An unhandled failure stops later steps.
 Continue after an expected rejection only when its check exit code is the one
 you intended and `report["undo"]["outcome"] == "passed"`. Parser errors also stop.
-Do not combine a callable with `--replace`, `--transform`, or `--patch`.
+Do not combine a callable with `--replace`, `--transform`, `--patch`, or `--ops`.
 For one standalone step, pass the table's arguments directly to `python3 HELPER`.
 
 The function returns text, never writes source files. Matches expose text,
@@ -71,7 +71,21 @@ parse match["text"], change the selected values, and return serialized text.
 For a caller-written Codex patch, replace match/replacement options with
 `--patch FILE --expected-files N --expected-edits N`; `--patch -` reads stdin.
 Patch paths resolve under ROOT; FILE resolves from the caller's directory.
-The same check and guarded undo run afterward.
+Caller-written JSON operation arrays use `--ops FILE` instead of `--patch FILE`,
+with the same expected file/edit counts; `--ops -` reads stdin. For example:
+
+~~~json
+[{"op":"create","path":"new.txt","text":"hello\n"},
+ {"op":"replace","path":"old.txt","find":"before","replace":"after"}]
+~~~
+
+Use `griz find --root ROOT --paths PATH --regex '(?s)\A.*\z' --format json`
+when you need whole-file observations; repeat `--paths` for more files.
+Read-only `find` takes no purpose or idempotency key. Its matches carry
+`path`, `text`, `range`, and `file_hash`; retain these in the caller program,
+build operations, and invoke the helper there. Do not add a round trip just to
+print and copy fingerprints. Supply a fingerprint or old text for byte ranges.
+Choose one input mode. The same check and guarded undo run afterward.
 
 The helper checks process status, JSON, verdicts, and IDs. A passed receipt
 includes the check result. On failure, inspect its stage and undo verdict;

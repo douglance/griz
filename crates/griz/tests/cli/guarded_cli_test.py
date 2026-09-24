@@ -703,6 +703,153 @@ class WorkflowTests(unittest.TestCase):
         return json.loads(body["content"][0]["text"])
 
 
+
+    def ops_options(self, text=None, files=2, edits=2):
+        payload = self.root / "input ops.json"
+        payload.write_text(text if text is not None else json.dumps([
+            {"op": "replace", "path": self.file.name, "find": "oldName", "replace": "new_name"},
+            {"op": "create", "path": "created file.txt", "text": "created\n"},
+        ]))
+        self.options.ops = str(payload)
+        self.options.expected_files = files
+        self.options.expected_edits = edits
+        return payload
+
+    def test_ops_updates_and_creates_without_leaking_payload(self):
+        self.ops_options()
+        staged = []
+        def intercept(stage, argv, kwargs):
+            if stage == "plan":
+                self.assertLess(sum(len(arg.encode()) for arg in argv), 4096)
+                argument = argv[argv.index("--ops") + 1]
+                self.assertTrue(argument.startswith("@"))
+                staged.append(Path(argument[1:]))
+        result = self.workflow(intercept)
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(self.calls, ["plan", "apply", "check"])
+        self.assertEqual(self.file.read_text(), "new_name\n")
+        self.assertEqual((self.root / "created file.txt").read_text(), "created\n")
+        self.assertTrue(self.marker.exists())
+        self.assertEqual(len(staged), 1)
+        self.assertFalse(staged[0].exists())
+        replay = self.workflow()
+        self.assertEqual(replay["operation"], result["operation"])
+
+
+    def test_documented_ops_payload_runs(self):
+        self.file = self.root / "old.txt"
+        self.file.write_text("before\n")
+        guide = Path(__file__).resolve().parents[4] / "skills" / "griz" / "SKILL.md"
+        payload = guide.read_text().split("~~~json\n", 1)[1].split("~~~", 1)[0]
+        self.ops_options(payload)
+        result = self.workflow()
+        self.assertEqual(result["outcome"], "passed", result)
+        self.assertEqual(self.file.read_text(), "after\n")
+        self.assertEqual((self.root / "new.txt").read_text(), "hello\n")
+
+    def test_ops_cli_file_and_stdin(self):
+        payload = self.ops_options()
+        caller = Path(self.temp.name)
+        relative = caller / "caller ops.json"
+        relative.write_bytes(payload.read_bytes())
+        for source in (relative.name, "-"):
+            with self.subTest(source=source):
+                command = [
+                    sys.executable, "-B", str(EXAMPLE), "--griz", BINARY,
+                    "--root", str(self.root), "--ops", source,
+                    "--expected-files", "2", "--expected-edits", "2", "--key", "ops-cli",
+                    "--check", *self.options.check,
+                ]
+                result = REAL_RUN(command, cwd=caller, input=payload.read_bytes(),
+                                  capture_output=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(json.loads(result.stdout)["outcome"], "passed")
+                self.assertEqual(self.file.read_text(), "new_name\n")
+                self.assertEqual((self.root / "created file.txt").read_text(), "created\n")
+
+    def test_ops_invalid_input_never_applies(self):
+        cases = ["not json", "{}", '[{"op":"create","path":"new","text":"x","typo":true}]',
+                 '[{"op":"replace","path":"sample file.txt","find":"missing","replace":"x"}]']
+        for index, content in enumerate(cases):
+            with self.subTest(content=content):
+                self.calls.clear()
+                self.ops_options(content)
+                self.options.key = f"invalid-ops-{index}"
+                result = self.workflow()
+                self.assert_stopped(result, "plan", ["plan"])
+                self.assertFalse((self.root / "created file.txt").exists())
+
+    def test_ops_count_and_syntax_guards_never_apply(self):
+        for files, edits in ((1, 2), (2, 1)):
+            with self.subTest(files=files, edits=edits):
+                self.calls.clear()
+                self.ops_options(files=files, edits=edits)
+                self.options.key = f"ops-counts-{files}-{edits}"
+                self.assert_stopped(self.workflow(), "plan", ["plan"])
+                self.assertFalse((self.root / "created file.txt").exists())
+        self.calls.clear()
+        self.ops_options(json.dumps([{"op": "create", "path": "bad.py", "text": "def broken(\n"}]),
+                         files=1, edits=1)
+        self.options.key = "ops-syntax"
+        self.assert_stopped(self.workflow(), "plan", ["plan"])
+        self.assertFalse((self.root / "bad.py").exists())
+
+    def test_ops_stale_apply_stops_before_check(self):
+        self.ops_options()
+        def intercept(stage, argv, kwargs):
+            if stage == "apply":
+                self.file.write_text("outside\noldName\n")
+        result = self.workflow(intercept)
+        self.assertEqual(result["stage"], "apply", result)
+        self.assertEqual(result["outcome"], "error", result)
+        self.assertEqual(self.calls, ["plan", "apply"])
+        self.assertEqual(self.file.read_text(), "outside\noldName\n")
+        self.assertFalse((self.root / "created file.txt").exists())
+        self.assertFalse(self.marker.exists())
+
+    def test_ops_failed_check_restores_modified_and_created_files(self):
+        self.file.write_text("# user's note\noldName\n")
+        self.ops_options()
+        self.options.check = [sys.executable, "-c", "raise SystemExit(17)"]
+        result = self.workflow()
+        self.assertEqual(result["outcome"], "failed", result)
+        self.assertEqual(result["check"]["exit_code"], 17)
+        self.assertEqual(result["undo"]["outcome"], "passed", result)
+        self.assertEqual(self.calls, ["plan", "apply", "check", "undo"])
+        self.assertEqual(self.file.read_text(), "# user's note\noldName\n")
+        self.assertFalse((self.root / "created file.txt").exists())
+
+    def test_ops_input_errors_and_parser_conflicts_stop_before_commands(self):
+        payload = self.ops_options()
+        for content in (None, b"\xff"):
+            with self.subTest(content=content):
+                self.calls.clear()
+                if content is None:
+                    payload.unlink()
+                else:
+                    payload.write_bytes(content)
+                self.assert_stopped(self.workflow(), "plan", [])
+        base = ["--root", str(self.root), "--ops", "-", "--key", "invalid"]
+        counts = ["--expected-files", "2", "--expected-edits", "2"]
+        cases = [counts + [flag, value] for flag, value in [
+            ("--path", self.file.name), ("--replace", "x"), ("--transform", "-"),
+            ("--language", "python"), ("--expected-matches", "1"),
+            ("--literal", "oldName"), ("--patch", "-"),
+        ]]
+        cases += [["--expected-files", "0", "--expected-edits", "2"],
+                  ["--expected-files", "2", "--expected-edits", "0"],
+                  ["--expected-files", "2"], ["--expected-edits", "2"]]
+        for arguments in cases:
+            with self.subTest(arguments=arguments), patch.object(example.subprocess, "run") as invoked:
+                with patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
+                    example.edit(base + arguments + ["--check", *self.options.check])
+                invoked.assert_not_called()
+        with patch.object(example.subprocess, "run") as invoked:
+            with patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
+                example.edit(base + counts + ["--check", *self.options.check],
+                             transform=lambda match: "x")
+            invoked.assert_not_called()
+
     def patch_options(self, text=None, files=1, edits=1):
         payload = self.root / "input patch.txt"
         payload.write_text(text or (
