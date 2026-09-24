@@ -4,6 +4,33 @@ use super::{Mcp, TestResult};
 use serde_json::{Value, json};
 
 #[test]
+fn pattern_paths_are_actionable_mcp_errors() -> TestResult {
+    let tree = tempfile::tempdir()?;
+    let mut mcp = Mcp::ready()?;
+    let response = mcp.call(
+        "tools/call",
+        &json!({
+            "name": "find",
+            "arguments": {
+                "root": tree.path(), "paths": ["**/*.rs"],
+                "literal": "needle", "expect_matches": 0
+            }
+        }),
+    )?;
+    let result = &response["result"];
+    assert_eq!(result["isError"], true, "{response}");
+    let text = result["content"][0]["text"]
+        .as_str()
+        .ok_or("no error text")?;
+    let error: Value = serde_json::from_str(text)?;
+    assert_eq!(error["code"], "VALIDATION_ERROR");
+    let message = error["message"].as_str().ok_or("no message")?;
+    assert!(message.contains("--glob"), "{message}");
+    assert!(message.contains("MCP: glob"), "{message}");
+    Ok(())
+}
+
+#[test]
 fn missing_search_paths_are_mcp_errors() -> TestResult {
     let tree = tempfile::tempdir()?;
     std::fs::write(tree.path().join("good.txt"), "needle")?;

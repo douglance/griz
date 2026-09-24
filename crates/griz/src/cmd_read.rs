@@ -69,7 +69,8 @@ fn read(path: &str, options: ReadOptions) -> Result<TypedResult<Value>, CmdError
 
 #[derive(Deserialize, incurs::Options)]
 struct FindOptions {
-    /// Files or directories to search. Defaults to the root. Directories honor .gitignore.
+    /// Literal files or directories to search; use glob for filename patterns.
+    /// Defaults to the root. Directories honor .gitignore.
     paths: Option<Vec<String>>,
     /// Glob patterns a file must match, such as **/*.rs. Prefix ! to exclude.
     glob: Option<Vec<String>>,
@@ -128,8 +129,22 @@ fn find_response(query: &FindQuery, files_only: bool) -> Result<(Value, usize), 
     Ok((body.map_err(|e| CmdError::invalid(e.to_string()))?, total))
 }
 
+fn validate_search_paths(root: &Path, paths: &[String]) -> Result<(), CmdError> {
+    for path in paths {
+        if path.contains(['*', '?', '[', '{']) && matches!(root.join(path).try_exists(), Ok(false))
+        {
+            return Err(CmdError::invalid(format!(
+                "search path does not exist: {}. --paths takes literal files or directories; use --glob for filename patterns (MCP: glob).",
+                root.join(path).display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn run_find(options: FindOptions) -> Result<TypedResult<Value>, CmdError> {
     let root = root(options.root.as_deref())?;
+    validate_search_paths(&root, options.paths.as_deref().unwrap_or_default())?;
     let mut paths = resolve_all(&root, options.paths)?;
     if paths.is_empty() {
         paths.push(root);
