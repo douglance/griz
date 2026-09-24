@@ -4,6 +4,7 @@ mod addressing;
 mod edit_input;
 mod plan_schema;
 mod search_errors;
+mod selection_resolved;
 mod transport;
 
 use serde_json::{Value, json};

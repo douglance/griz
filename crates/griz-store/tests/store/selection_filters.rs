@@ -84,6 +84,7 @@ fn selection_path_edit_and_confidence_filters_intersect() -> TestResult {
             paths: vec![fx.path("a.txt")],
             edits: vec!["e1".into()],
             min_confidence: None,
+            ..Selection::default()
         },
         Selection {
             edits: vec!["e1".into()],
@@ -129,5 +130,72 @@ fn selection_does_not_hide_failed_operations_without_edits() -> TestResult {
     );
     assert_eq!(machine.problems.len(), 1);
     assert_eq!(machine.problems[0].op, 1);
+    Ok(())
+}
+
+#[test]
+fn resolved_selection_intersects_paths_and_confidence() -> TestResult {
+    let fx = Fixture::new()?;
+    let original = original(&fx)?;
+    let selected = fx.store.select(
+        &original.id,
+        &Selection {
+            paths: vec![fx.path("a.txt"), fx.path("b.txt"), fx.path("e.txt")],
+            min_confidence: Some(Confidence::Machine),
+            resolved_only: true,
+            ..Selection::default()
+        },
+        "resolved exact operations",
+    )?;
+    assert_eq!(
+        selected.ops,
+        vec![original.ops[0].clone(), original.ops[3].clone()]
+    );
+    assert!(selected.problems.is_empty());
+    let applied = fx.store.apply(&crate::common::request(&selected))?;
+    assert_eq!(applied.state, griz_store::OperationState::Applied);
+    assert_eq!(fx.read("a.txt")?, "HIT HIT\n");
+    assert_eq!(fx.read("b.txt")?, "fuzzy   \n");
+    assert_eq!(fx.read("c.txt")?, "keep\n");
+    assert!(!fx.path("d.txt").exists());
+    assert_eq!(fx.read("e.txt")?, "move\n");
+    Ok(())
+}
+
+#[test]
+fn resolved_selection_rebuilds_and_refuses_missing_prerequisites() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.write("a.txt", "start   \n")?;
+    let original = fx.plan(vec![
+        fx.replace("a.txt", "start\n", "middle\n"),
+        fx.replace("a.txt", "middle", "done"),
+    ])?;
+    assert!(original.problems.is_empty());
+    assert_eq!(original.edits[0].confidence, Confidence::Maybe);
+    assert_eq!(original.edits[1].confidence, Confidence::Machine);
+    let selected = fx.store.select(
+        &original.id,
+        &Selection {
+            min_confidence: Some(Confidence::Machine),
+            resolved_only: true,
+            ..Selection::default()
+        },
+        "drop prerequisite",
+    )?;
+    assert_eq!(selected.problems.len(), 1);
+    assert_eq!(
+        fx.store.apply(&crate::common::request(&selected))?.state,
+        griz_store::OperationState::Failed
+    );
+    assert_eq!(fx.read("a.txt")?, "start   \n");
+    Ok(())
+}
+
+#[test]
+fn resolved_selection_default_preserves_legacy_identity() -> TestResult {
+    let legacy = serde_json::json!({"paths":[],"edits":[],"min_confidence":null});
+    let selection: Selection = serde_json::from_value(legacy.clone())?;
+    assert!(!selection.resolved_only);
+    assert_eq!(serde_json::to_value(&selection)?, legacy);
     Ok(())
 }

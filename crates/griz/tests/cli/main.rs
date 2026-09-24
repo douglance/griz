@@ -30,6 +30,7 @@ mod read_address;
 mod replay;
 mod restore_boundary;
 mod scope;
+mod selection_resolved;
 mod selection_snapshot;
 mod staging_cleanup;
 mod syntax;

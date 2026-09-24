@@ -63,6 +63,9 @@ pub struct Selection {
     pub edits: Vec<String>,
     /// Keep operations whose every edit is at least this confident.
     pub min_confidence: Option<Confidence>,
+    /// Keep only operations that produced edits in the original plan.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub resolved_only: bool,
 }
 
 impl Store {
@@ -245,7 +248,7 @@ fn selected_ops(plan: &PlanRecord, selection: &Selection) -> Vec<Op> {
         .iter()
         .map(|op| Kept {
             by_path: paths.is_empty() || paths.contains(op.path().as_path()),
-            by_edit: edits.is_empty(),
+            by_edit: edits.is_empty() && !selection.resolved_only,
             by_confidence: true,
         })
         .collect();
@@ -257,7 +260,8 @@ fn selected_ops(plan: &PlanRecord, selection: &Selection) -> Vec<Op> {
             continue;
         };
         kept.by_path |= paths.contains(edit.path.as_path());
-        kept.by_edit |= edits.contains(edit.id.as_str());
+        kept.by_edit |=
+            edits.contains(edit.id.as_str()) || (selection.resolved_only && edits.is_empty());
         kept.by_confidence &= trusted;
     }
     plan.ops

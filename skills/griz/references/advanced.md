@@ -27,6 +27,21 @@ Use exact argument arrays rather than composing a command string.
 Mutations answer `{id, outcome}`. Use `verbosity: "trace"` or `griz.get({ id })`
 for a full record. A missed anchor's nearest text is in `problems[].nearest`.
 
+## Recover resolved edits
+
+When you intentionally want a partial change, use
+`griz select PLAN --resolved-only --verbosity info --purpose ... --idempotency-key ...`
+or `griz.select({ plan, resolved_only: true, verbosity: "info", purpose, idempotency_key })`.
+This keeps whole operations that produced edits, without listing every edit id.
+Path, edit-id, and confidence filters still intersect; add `min_confidence: "machine"`
+when you only want exact matches.
+
+Selection writes no source file. It rebuilds from the original snapshots, so
+omitting a prerequisite can still make the new plan fail. Check its outcome and
+diff before applying. Operations with no edits are omitted; their original
+problems remain in the original plan for separate repair. Without this flag,
+failed operations remain visible in the selected plan.
+
 ## File summaries
 
 Use `griz find --files-only --literal oldName --root ROOT --format json`

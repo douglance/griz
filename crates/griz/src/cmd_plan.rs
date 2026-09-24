@@ -134,6 +134,10 @@ struct SelectOptions {
     edits: Option<Vec<String>>,
     /// Keep operations whose every edit is at least this confident: machine or maybe.
     min_confidence: Option<String>,
+    /// Keep only operations that produced edits, without listing their ids.
+    /// The selected operations are rebuilt and may still fail if omitted operations were prerequisites.
+    #[incurs(default = false)]
+    resolved_only: bool,
     /// Directory relative paths resolve from. Defaults to the current directory.
     root: Option<String>,
     /// Why this selection is being made.
@@ -152,7 +156,7 @@ pub fn select_command() -> CommandDef {
             respond(select(ctx.args.plan, ctx.options).await)
         },
     )
-    .description("Make a new plan from part of another: by path, edit id, or confidence. Enables partial apply and partial undo.")
+    .description("Make a new plan from part of another: by path, edit id, confidence, or resolved_only. Use resolved_only to keep operations that produced edits without listing their ids. Writes no source file.")
     .examples(crate::usage::example("PLAN --root /path/to/repo --paths \"src one.rs\" --paths \"src two.rs\" --purpose \"Select files\" --idempotency-key edit-select --format json", "Select files from a saved plan."))
     .hint("CLI: PLAN is positional. Repeat --paths and --edits for multiple values. Check exit status and outcome == passed before using the new id.")
     .mcp(annotations::records())
@@ -165,6 +169,7 @@ async fn select(id: String, options: SelectOptions) -> Result<(Value, Outcome), 
     let selection = Selection {
         paths: input_paths(&root, options.paths),
         edits: options.edits.unwrap_or_default(),
+        resolved_only: options.resolved_only,
         min_confidence: options
             .min_confidence
             .as_deref()
