@@ -39,6 +39,9 @@ pub struct ApplyRequest {
 pub struct UndoRequest {
     /// Operation to undo.
     pub operation: String,
+    /// The caller's tree. A file the operation wrote outside it is never
+    /// touched: the undo is refused instead of writing there.
+    pub root: PathBuf,
     /// Restore only these files; empty restores every file the operation wrote.
     pub paths: Vec<PathBuf>,
     /// Stale-file policy for files changed since the operation wrote them.
@@ -103,6 +106,10 @@ impl Store {
     /// left them, or merged onto a newer text when `request.on_stale` allows
     /// it. Files left changed are left alone and listed as conflicts.
     ///
+    /// One store holds every repository's history, so a file the operation
+    /// wrote outside `request.root` is never a candidate: the undo refuses
+    /// rather than write outside the caller's tree.
+    ///
     /// # Errors
     /// Returns an error when the operation cannot be read or a write fails.
     pub fn undo(&self, request: &UndoRequest) -> Result<Operation, StoreError> {
@@ -112,12 +119,25 @@ impl Store {
         if original.state != OperationState::Applied {
             return self.refuse(op, "only an applied operation can be undone");
         }
-        let locked: Vec<PathBuf> = original
+        let chosen: Vec<&FileWrite> = original
             .files
             .iter()
             .filter(|file| request.paths.is_empty() || request.paths.contains(&file.path))
-            .map(|file| file.path.clone())
             .collect();
+        let outside: Vec<String> = chosen
+            .iter()
+            .filter(|file| !file.path.starts_with(&request.root))
+            .map(|file| file.path.display().to_string())
+            .collect();
+        if !outside.is_empty() {
+            let reason = format!(
+                "{} lie outside root {}; undo never writes outside the caller's tree",
+                outside.join(", "),
+                request.root.display()
+            );
+            return self.refuse(op, &reason);
+        }
+        let locked: Vec<PathBuf> = chosen.iter().map(|file| file.path.clone()).collect();
         let _locks = self.lock_paths(&locked)?;
         let original = self.operation(&request.operation)?;
         let chosen = original

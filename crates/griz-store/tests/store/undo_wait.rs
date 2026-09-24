@@ -1,7 +1,7 @@
 //! Undo and span restore refresh absorbed metadata after waiting for locks.
 
 use crate::common::{Fixture, TestResult, in_lock_order, request, undo_request, wait_for_lock};
-use griz_store::{OnStale, Operation, OperationState, Store, UndoRequest};
+use griz_store::{OnStale, Operation, OperationState, RestoreScope, Store, UndoRequest};
 use std::{
     path::PathBuf,
     thread::{self, JoinHandle},
@@ -26,22 +26,36 @@ fn fixture(fx: &Fixture) -> Result<(String, Vec<PathBuf>), Box<dyn std::error::E
     Ok((applied.id, paths))
 }
 
-fn spawn_undo(
+/// Where a spawned undo opens its store and scopes its restore.
+struct Endpoint {
     home: PathBuf,
+    root: PathBuf,
+}
+
+fn spawn_undo(
+    endpoint: Endpoint,
     id: String,
     path: PathBuf,
     span: bool,
     policy: OnStale,
 ) -> JoinHandle<Result<Operation, String>> {
     thread::spawn(move || {
-        let store = Store::open(&home).map_err(|error| error.to_string())?;
+        let store = Store::open(&endpoint.home).map_err(|error| error.to_string())?;
         let result = if span {
-            store.restore_since(&id, &[], policy, "undo span")
+            store.restore_since(
+                &id,
+                RestoreScope {
+                    root: &endpoint.root,
+                    paths: &[],
+                },
+                policy,
+                "undo span",
+            )
         } else {
             store.undo(&UndoRequest {
                 paths: vec![path],
                 on_stale: policy,
-                ..undo_request(&id)
+                ..undo_request(endpoint.root, &id)
             })
         };
         result.map_err(|error| error.to_string())
@@ -62,7 +76,11 @@ fn run_case(span: bool, policy: OnStale) -> TestResult {
             .map_err(|error| error.to_string())
     });
     wait_for_lock(&fx.store, &paths[0])?;
-    let undo = spawn_undo(home, id, paths[0].clone(), span, policy);
+    let endpoint = Endpoint {
+        home,
+        root: fx.root(),
+    };
+    let undo = spawn_undo(endpoint, id, paths[0].clone(), span, policy);
     thread::sleep(Duration::from_millis(50));
     let completed_while_locked = undo.is_finished();
     drop(held);
@@ -106,8 +124,12 @@ fn waiting_span_does_not_include_operations_added_after_selection() -> TestResul
     let (id, paths) = fixture(&fx)?;
     fx.store.absorb(&id, &[], "formatter")?;
     let held = fx.store.lock_paths(&[paths[1].clone()])?;
+    let endpoint = Endpoint {
+        home: fx.store.home().to_path_buf(),
+        root: fx.root(),
+    };
     let undo = spawn_undo(
-        fx.store.home().to_path_buf(),
+        endpoint,
         id.clone(),
         paths[0].clone(),
         true,

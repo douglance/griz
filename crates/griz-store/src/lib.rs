@@ -34,6 +34,7 @@ pub use listing::Page;
 pub use paths::{PathResolver, destination_path, directory_path};
 pub use plans::{PlanRecord, Selection};
 pub use receipts::Claim;
+pub use restore::RestoreScope;
 
 use rusqlite::Connection;
 use std::{

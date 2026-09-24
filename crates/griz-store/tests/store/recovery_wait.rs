@@ -37,7 +37,7 @@ fn waiting_recovery_preserves_a_later_undo_of_the_completed_operation() -> TestR
         fx.store.save_operation(&applied)?;
         let undone = fx.store.undo(&UndoRequest {
             paths: vec![paths[2].clone()],
-            ..undo_request(&applied.id)
+            ..undo_request(fx.root(), &applied.id)
         })?;
         assert_eq!(undone.state, OperationState::Applied);
         assert_eq!(std::fs::read_to_string(&paths[2])?, "before\n");

@@ -315,6 +315,100 @@ class WorkflowTests(unittest.TestCase):
         result = self.workflow(intercept, transform=lambda match: "new_name")
         self.assert_stopped(result, "find", ["find"])
 
+
+    def glob_args(self, patterns, *, paths=(), query=("--literal", "oldName"),
+                  count=1, check=None, key="glob"):
+        return [
+            "--root", str(self.root), "--griz", BINARY,
+            *[arg for path in paths for arg in ("--path", path)],
+            *[arg for pattern in patterns for arg in ("--glob", pattern)],
+            *query, "--expected-matches", str(count), "--key", key,
+            "--check", *(check or [sys.executable, "-c", "pass"]),
+        ]
+
+    def test_glob_literal_exclusions_and_guarded_undo(self):
+        included = self.root / "other file.txt"
+        excluded = self.root / "skip.txt"
+        ignored = self.root / "ignored.txt"
+        for path in (included, excluded, ignored):
+            path.write_text("oldName\n")
+        (self.root / ".gitignore").write_text("ignored.txt\n")
+        check = [sys.executable, "-c",
+                 "from pathlib import Path; "
+                 "assert Path('sample file.txt').read_text() == 'new_name\\n'; "
+                 "assert Path('other file.txt').read_text() == 'new_name\\n'; "
+                 "assert Path('skip.txt').read_text() == 'oldName\\n'; "
+                 "assert Path('ignored.txt').read_text() == 'oldName\\n'; "
+                 "raise SystemExit(17)"]
+        args = ["--replace", "new_name", *self.glob_args(
+            ["*.txt", "!skip.txt", "!ignored.txt"], count=2, check=check)]
+        with self.assertRaises(example.CommandFailure) as raised:
+            example.edit(args)
+        report = raised.exception.report
+        self.assertIn("check", report, report)
+        self.assertEqual(report["check"]["exit_code"], 17, report)
+        self.assertEqual(report["undo"]["outcome"], "passed", report)
+        for path in (self.file, included, excluded, ignored):
+            self.assertEqual(path.read_bytes(), b"oldName\n")
+
+    def test_glob_callback_respects_path_scope(self):
+        selected = self.root / "src"
+        outside = self.root / "outside"
+        selected.mkdir()
+        outside.mkdir()
+        wanted = selected / "client one.ts"
+        unwanted = selected / "other.ts"
+        elsewhere = outside / "client two.ts"
+        for path in (wanted, unwanted, elsewhere):
+            path.write_text("legacy(value)\n")
+        result = example.edit(self.glob_args(
+            ["**/client*.ts"], paths=["src"], query=["--pattern", "legacy($ARG)"]),
+            transform=lambda match: "modern(" + match["vars"]["ARG"] + ")")
+        self.assertEqual(result["outcome"], "passed")
+        self.assertEqual(wanted.read_bytes(), b"modern(value)\n")
+        for path in (unwanted, elsewhere):
+            self.assertEqual(path.read_bytes(), b"legacy(value)\n")
+        self.assertEqual(self.file.read_bytes(), b"oldName\n")
+
+    def test_glob_inclusion_matches_native_gitignore_override(self):
+        (self.root / ".gitignore").write_text("sample file.txt\n")
+        result = example.edit(["--replace", "new_name",
+                               *self.glob_args(["*.txt"])])
+        self.assertEqual(result["outcome"], "passed")
+        self.assertEqual(self.file.read_bytes(), b"new_name\n")
+
+    def test_glob_no_matches_stops_before_check(self):
+        args = ["--replace", "new_name", *self.glob_args(
+            ["absent-*.txt"], check=self.options.check)]
+        with self.assertRaises(example.CommandFailure) as raised:
+            example.edit(args)
+        self.assertEqual(raised.exception.report["stage"], "find")
+        self.assertEqual(self.file.read_bytes(), b"oldName\n")
+        self.assertFalse(self.marker.exists())
+
+    def test_glob_repeated_includes_keep_literal_bracket_names(self):
+        other = self.root / "[literal].txt"
+        other.write_text("oldName\n")
+        result = example.edit(["--replace", "new_name", *self.glob_args(
+            ["sample*", "[[]literal].txt"], count=2)])
+        self.assertEqual(result["outcome"], "passed")
+        self.assertEqual(self.file.read_bytes(), b"new_name\n")
+        self.assertEqual(other.read_bytes(), b"new_name\n")
+
+    def test_glob_rejects_empty_filter_and_supplied_inputs(self):
+        for extra in (["--glob", "", "--literal", "oldName", "--replace", "new_name",
+                       "--expected-matches", "1"],
+                      ["--glob", "*.txt", "--ops", "-",
+                       "--expected-files", "1", "--expected-edits", "1"],
+                      ["--glob", "*.txt", "--patch", "-",
+                       "--expected-files", "1", "--expected-edits", "1"]):
+            with self.subTest(extra=extra), self.assertRaises(SystemExit) as raised:
+                example.parse_options([
+                    "--root", str(self.root), "--key", "invalid", *extra,
+                    "--check", sys.executable, "-c", "pass"])
+            self.assertEqual(raised.exception.code, 2)
+        self.assertEqual(self.file.read_bytes(), b"oldName\n")
+
     def test_success_and_repeated_paths(self):
         second = self.root / "another file.txt"
         second.write_text("oldName\n")

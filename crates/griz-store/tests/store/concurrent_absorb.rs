@@ -90,7 +90,7 @@ fn concurrent_absorbs_preserve_every_update_and_keep_all_files_undoable() -> Tes
     let mut absorbed = fx.store.operation(&id)?.absorbed;
     absorbed.sort();
     assert_eq!(absorbed, paths);
-    let undone = fx.store.undo(&undo_request(&id))?;
+    let undone = fx.store.undo(&undo_request(fx.root(), &id))?;
     assert_eq!(undone.state, OperationState::Applied);
     assert!(undone.conflicts.is_empty());
     for index in 0..count {

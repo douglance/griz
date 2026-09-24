@@ -1,7 +1,7 @@
 //! History follows journal insertion, even when IDs were allocated earlier.
 
 use crate::common::{Fixture, TestResult};
-use griz_store::{FileWrite, OnStale, Operation, OperationKind, OperationState};
+use griz_store::{FileWrite, OnStale, Operation, OperationKind, OperationState, RestoreScope};
 
 fn recorded(fx: &Fixture, op: &mut Operation, before: &str, after: &str) -> TestResult {
     op.state = OperationState::Applied;
@@ -56,9 +56,15 @@ fn history_and_restore_follow_journal_order_instead_of_id_order() -> TestResult 
         fx.store.operations_since(&earlier.id)?,
         vec![earlier.clone(), delayed.clone()]
     );
-    let restored = fx
-        .store
-        .restore_since(&earlier.id, &[], OnStale::Refuse, "restore")?;
+    let restored = fx.store.restore_since(
+        &earlier.id,
+        RestoreScope {
+            root: &fx.root(),
+            paths: &[],
+        },
+        OnStale::Refuse,
+        "restore",
+    )?;
     assert_eq!(
         restored.state,
         OperationState::Applied,

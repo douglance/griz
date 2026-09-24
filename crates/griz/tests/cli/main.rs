@@ -34,6 +34,7 @@ mod selection_snapshot;
 mod staging_cleanup;
 mod syntax;
 mod throughput;
+mod undo_root_scope;
 mod verbosity;
 mod verdicts;
 mod workspace_replay;

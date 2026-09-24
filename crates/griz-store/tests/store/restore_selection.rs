@@ -1,7 +1,7 @@
 //! Restore selection locks only files included by the caller.
 
 use crate::common::{Fixture, TestResult, request};
-use griz_store::{OnStale, OperationState, Store};
+use griz_store::{OnStale, OperationState, RestoreScope, Store};
 use std::{sync::mpsc, thread, time::Duration};
 
 #[test]
@@ -16,12 +16,22 @@ fn narrowed_restore_does_not_wait_for_an_excluded_file_lock() -> TestResult {
     let applied = fx.store.apply(&request(&plan))?;
     let held = fx.store.lock_paths(&[fx.path("b.txt")])?;
     let home = fx.store.home().to_path_buf();
+    let root = fx.root();
     let selected = fx.path("a.txt");
     let (send, receive) = mpsc::channel();
     let worker = thread::spawn(move || {
+        let paths = [selected];
         let result = Store::open(&home)
             .and_then(|store| {
-                store.restore_since(&applied.id, &[selected], OnStale::Refuse, "selected")
+                store.restore_since(
+                    &applied.id,
+                    RestoreScope {
+                        root: &root,
+                        paths: &paths,
+                    },
+                    OnStale::Refuse,
+                    "selected",
+                )
             })
             .map_err(|error| error.to_string());
         send.send(result).map_err(|error| error.to_string())

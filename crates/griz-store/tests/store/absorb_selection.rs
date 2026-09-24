@@ -32,7 +32,7 @@ fn duplicate_reversed_paths_keep_file_order_and_unselected_fingerprints() -> Tes
     let expected = Some(content_hash("formatted\n"));
     assert_eq!(result.operation.files[0].after_hash, expected);
     assert_eq!(result.operation.files[2].after_hash, expected);
-    let undone = fx.store.undo(&undo_request(&original.id))?;
+    let undone = fx.store.undo(&undo_request(fx.root(), &original.id))?;
     assert_eq!(undone.conflicts, vec![fx.path("b.txt")]);
     assert_eq!(fx.read("a.txt")?, "before\n");
     assert_eq!(fx.read("b.txt")?, "formatted\n");

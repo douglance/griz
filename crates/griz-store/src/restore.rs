@@ -12,13 +12,24 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// The tree a restore is scoped to: `root` bounds the span first; `paths`
+/// narrows it further within that root.
+#[derive(Debug, Clone, Copy)]
+pub struct RestoreScope<'a> {
+    /// The caller's tree. One store holds every repository's history, so a
+    /// file outside it is never a candidate.
+    pub root: &'a Path,
+    /// Restore only these files; empty restores everything under `root`.
+    pub paths: &'a [PathBuf],
+}
+
 impl Store {
     /// Restores every applied operation from `since` (inclusive) through the
     /// newest, as one new operation. Per file touched in the span, the write
     /// targets the text the first touching write found it in and guards on
     /// the text the last touching write left it in; a broken chain, or a file
-    /// changed since, follows the same rules as `undo`. Narrow the span with
-    /// `paths`; an empty span, or one only `paths` excludes, refuses.
+    /// changed since, follows the same rules as `undo`. An empty span, or one
+    /// only `scope` excludes, refuses.
     ///
     /// # Errors
     /// Returns `NotFound` when the starting operation does not exist, or an
@@ -26,11 +37,11 @@ impl Store {
     pub fn restore_since(
         &self,
         since: &str,
-        paths: &[PathBuf],
+        scope: RestoreScope<'_>,
         on_stale: OnStale,
         purpose: &str,
     ) -> Result<Operation, StoreError> {
-        let selected = self.select_restore(since, paths)?;
+        let selected = self.select_restore(since, scope.root, scope.paths)?;
         let _locks = self.lock_paths(&selected.paths)?;
         let span = self.reload_operations(&selected.ids)?;
         let mut op = Operation::new(OperationKind::Undo, purpose);
@@ -38,7 +49,7 @@ impl Store {
             since: since.to_string(),
             operations: selected.ids,
         });
-        let chains = chains_by_path(&span, paths);
+        let chains = chains_by_path(&span, scope.root, scope.paths);
         let mut targets = Vec::new();
         for (path, chain) in &chains {
             let resolved = self.resolve_chain(path, chain, on_stale)?;
@@ -94,16 +105,18 @@ impl Store {
     }
 }
 
-/// Every file the span touches, mapped to its writes in order, narrowed to
-/// `paths` when given.
+/// Every file the span touches under `root`, mapped to its writes in order,
+/// narrowed further to `paths` when given.
 fn chains_by_path<'a>(
     span: &'a [Operation],
+    root: &Path,
     paths: &[PathBuf],
 ) -> BTreeMap<PathBuf, Vec<&'a FileWrite>> {
     let mut chains: BTreeMap<PathBuf, Vec<&FileWrite>> = BTreeMap::new();
     let touches = span
         .iter()
         .flat_map(|entry| &entry.files)
+        .filter(|file| file.path.starts_with(root))
         .filter(|file| paths.is_empty() || paths.contains(&file.path));
     for file in touches {
         chains.entry(file.path.clone()).or_default().push(file);

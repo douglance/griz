@@ -144,7 +144,9 @@ def transformed_operation(options, match, transform):
 def plan_edit(options, transform=None):
     if any(getattr(options, mode, None) is not None for mode in ("patch", "ops")):
         return plan_supplied_input(options), options.expected_files
-    paths = [arg for path in options.path for arg in ("--paths", path)]
+    paths = [arg for path in (options.path or []) for arg in ("--paths", path)]
+    paths.extend(arg for glob in (getattr(options, "glob", None) or [])
+                 for arg in ("--glob", glob))
     if getattr(options, "literal", None) is not None and transform is None:
         return plan_literal(options, paths)
     found = griz_command(options, "find", [
@@ -379,7 +381,7 @@ def validate_options(parser, options, transform=None):
     if options.patch is not None or options.ops is not None:
         if options.patch == "-" and options.ops == "-":
             parser.error("only one of patch and ops may read stdin")
-        match_fields = ("path", "replace", "transform", "language", "expected_matches",
+        match_fields = ("path", "glob", "replace", "transform", "language", "expected_matches",
                         "literal", "regex", "pattern")
         if (any(value == "" for value in (options.patch, options.ops))
                 or any(getattr(options, name) is not None for name in match_fields)):
@@ -391,8 +393,11 @@ def validate_options(parser, options, transform=None):
         parser.error("give a literal, regex, pattern, patch, or ops input")
     if options.expected_files is not None or options.expected_edits is not None:
         parser.error("expected file and edit counts require patch or ops input; use expected matches")
-    if not options.path or options.expected_matches is None or options.expected_matches < 1:
-        parser.error("give paths and a positive match count")
+    if ((not options.path and not options.glob)
+            or options.expected_matches is None or options.expected_matches < 1):
+        parser.error("give paths or globs and a positive match count")
+    if options.glob and any(not pattern for pattern in options.glob):
+        parser.error("give nonempty filename globs")
     if options.replace is None and options.transform is None and transform is None:
         parser.error("give replace or transform")
     if any(value == "" for value in (options.literal, options.regex, options.pattern, options.transform)):
@@ -403,7 +408,10 @@ def parse_options(arguments=None, transform=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--path", action="append",
-                        help="One file or directory; repeat for more paths.")
+                        help="Literal file or directory; repeat for more paths.")
+    parser.add_argument("--glob", action="append",
+                        help="Filename filter; repeat for more, prefix ! to exclude. "
+                             "Searches root when no path is given.")
     query = parser.add_mutually_exclusive_group()
     query.add_argument("--literal", help="Exact text to match.")
     query.add_argument("--regex", help="Regex to match; captures are available to a transform.")

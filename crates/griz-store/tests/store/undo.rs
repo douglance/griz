@@ -20,7 +20,7 @@ fn undo_restores_every_file_byte_for_byte() -> TestResult {
         },
     ])?;
     let applied = fx.store.apply(&request(&plan))?;
-    let undone = fx.store.undo(&undo_request(&applied.id))?;
+    let undone = fx.store.undo(&undo_request(fx.root(), &applied.id))?;
     assert_eq!(undone.state, OperationState::Applied, "{:?}", undone.reason);
     assert_eq!(undone.kind, OperationKind::Undo);
     assert_eq!(undone.undoes.as_deref(), Some(applied.id.as_str()));
@@ -35,8 +35,8 @@ fn an_undo_can_itself_be_undone() -> TestResult {
     fx.write("a.rs", "one\n")?;
     let plan = fx.plan(vec![fx.replace("a.rs", "one", "ONE")])?;
     let applied = fx.store.apply(&request(&plan))?;
-    let undone = fx.store.undo(&undo_request(&applied.id))?;
-    let redone = fx.store.undo(&undo_request(&undone.id))?;
+    let undone = fx.store.undo(&undo_request(fx.root(), &applied.id))?;
+    let redone = fx.store.undo(&undo_request(fx.root(), &undone.id))?;
     assert_eq!(redone.state, OperationState::Applied, "{:?}", redone.reason);
     assert_eq!(fx.read("a.rs")?, "ONE\n");
     Ok(())
@@ -53,7 +53,7 @@ fn undo_leaves_files_changed_since_alone_and_lists_them() -> TestResult {
     ])?;
     let applied = fx.store.apply(&request(&plan))?;
     fx.write("b.rs", "B\nhuman edit\n")?;
-    let undone = fx.store.undo(&undo_request(&applied.id))?;
+    let undone = fx.store.undo(&undo_request(fx.root(), &applied.id))?;
     assert_eq!(undone.conflicts, vec![fx.path("b.rs")]);
     assert_eq!(fx.read("a.rs")?, "a\n");
     assert_eq!(fx.read("b.rs")?, "B\nhuman edit\n");
@@ -72,7 +72,7 @@ fn undo_can_restore_only_some_files() -> TestResult {
     let applied = fx.store.apply(&request(&plan))?;
     fx.store.undo(&UndoRequest {
         paths: vec![fx.path("b.rs")],
-        ..undo_request(&applied.id)
+        ..undo_request(fx.root(), &applied.id)
     })?;
     assert_eq!(
         (fx.read("a.rs")?, fx.read("b.rs")?),
@@ -88,7 +88,7 @@ fn a_failed_operation_cannot_be_undone() -> TestResult {
     let plan = fx.plan(vec![fx.replace("a.rs", "missing", "x")])?;
     let failed = fx.store.apply(&request(&plan))?;
     assert_eq!(
-        fx.store.undo(&undo_request(&failed.id))?.state,
+        fx.store.undo(&undo_request(fx.root(), &failed.id))?.state,
         OperationState::Failed
     );
     Ok(())
@@ -101,12 +101,12 @@ fn absorbing_a_formatter_run_keeps_undo_working() -> TestResult {
     let plan = fx.plan(vec![fx.replace("a.rs", "f()", "g()")])?;
     let applied = fx.store.apply(&request(&plan))?;
     fx.write("a.rs", "fn g() {}\n")?;
-    let refused = fx.store.undo(&undo_request(&applied.id))?;
+    let refused = fx.store.undo(&undo_request(fx.root(), &applied.id))?;
     assert_eq!(refused.state, OperationState::Failed);
     let absorbed = fx.store.absorb(&applied.id, &[], "formatted")?;
     assert_eq!(absorbed.absorbed, vec![fx.path("a.rs")]);
     assert_eq!(absorbed.operation.absorbed, vec![fx.path("a.rs")]);
-    let undone = fx.store.undo(&undo_request(&applied.id))?;
+    let undone = fx.store.undo(&undo_request(fx.root(), &applied.id))?;
     assert_eq!(undone.state, OperationState::Applied, "{:?}", undone.reason);
     assert_eq!(fx.read("a.rs")?, "fn  f() {}\n");
     Ok(())
@@ -164,7 +164,7 @@ fn merge_policy_reverts_the_undo_around_an_unrelated_later_edit() -> TestResult 
     fx.write("a.rs", "ONE\ntwo\nTHREE\n")?;
     let merged = fx.store.undo(&UndoRequest {
         on_stale: OnStale::Merge,
-        ..undo_request(&applied.id)
+        ..undo_request(fx.root(), &applied.id)
     })?;
     assert_eq!(merged.state, OperationState::Applied, "{:?}", merged.reason);
     assert!(merged.files[0].merged);
@@ -182,7 +182,7 @@ fn merge_policy_leaves_an_overlapping_later_edit_alone_and_lists_it() -> TestRes
     fx.write("a.rs", "ONE-ALSO-CHANGED\ntwo\nthree\n")?;
     let refused = fx.store.undo(&UndoRequest {
         on_stale: OnStale::Merge,
-        ..undo_request(&applied.id)
+        ..undo_request(fx.root(), &applied.id)
     })?;
     assert_eq!(refused.state, OperationState::Failed);
     assert_eq!(refused.conflicts, vec![fx.path("a.rs")]);

@@ -1,7 +1,7 @@
 //! Manual measurement of restoring long, valid chains of recorded writes.
 
 use crate::common::{Fixture, TestResult, undo_request};
-use griz_store::{FileWrite, OnStale, Operation, OperationKind, OperationState};
+use griz_store::{FileWrite, OnStale, Operation, OperationKind, OperationState, RestoreScope};
 use rusqlite::{Connection, params};
 use std::{error::Error, hint::black_box, time::Instant};
 
@@ -36,11 +36,15 @@ fn measure(count: usize) -> TestResult {
     let mut samples = Vec::new();
     for trial in 0..3 {
         let start = Instant::now();
-        let restored =
-            black_box(
-                fx.store
-                    .restore_since(&first, &[], OnStale::Refuse, "benchmark")?,
-            );
+        let restored = black_box(fx.store.restore_since(
+            &first,
+            RestoreScope {
+                root: &fx.root(),
+                paths: &[],
+            },
+            OnStale::Refuse,
+            "benchmark",
+        )?);
         samples.push(start.elapsed().as_micros());
         assert_eq!(
             restored.state,
@@ -58,7 +62,7 @@ fn measure(count: usize) -> TestResult {
                 .len(),
             count + 2 * trial
         );
-        let redone = fx.store.undo(&undo_request(&restored.id))?;
+        let redone = fx.store.undo(&undo_request(fx.root(), &restored.id))?;
         assert_eq!(redone.state, OperationState::Applied);
         assert_eq!(fx.read("a.txt")?, "one\n");
     }

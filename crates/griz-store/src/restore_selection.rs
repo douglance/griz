@@ -3,7 +3,10 @@
 use crate::{Store, StoreError};
 use rusqlite::{Connection, OptionalExtension};
 use serde::Deserialize;
-use std::{collections::BTreeSet, path::PathBuf};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 pub(crate) struct RestoreSelection {
     pub(crate) ids: Vec<String>,
@@ -22,18 +25,22 @@ struct LockFile {
 }
 
 impl Store {
+    /// One store holds every repository's history, so the span is always
+    /// narrowed to `root` first; `paths` narrows it further within that root.
     pub(crate) fn select_restore(
         &self,
         since: &str,
+        root: &Path,
         paths: &[PathBuf],
     ) -> Result<RestoreSelection, StoreError> {
-        self.with(|conn| select(conn, since, paths))
+        self.with(|conn| select(conn, since, root, paths))
     }
 }
 
 fn select(
     conn: &Connection,
     since: &str,
+    root: &Path,
     paths: &[PathBuf],
 ) -> Result<RestoreSelection, StoreError> {
     let sequence: i64 = conn
@@ -53,14 +60,21 @@ fn select(
     while let Some(row) = rows.next()? {
         let body: String = row.get(0)?;
         let record: LockRecord = serde_json::from_str(&body)?;
-        ids.push(record.id);
-        locked.extend(
-            record
-                .files
-                .into_iter()
-                .map(|file| file.path)
-                .filter(|path| paths.is_empty() || paths.contains(path)),
-        );
+        let id = record.id;
+        let touching = record
+            .files
+            .into_iter()
+            .map(|file| file.path)
+            .filter(|path| path.starts_with(root))
+            .filter(|path| paths.is_empty() || paths.contains(path));
+        let mut touched = false;
+        for path in touching {
+            touched = true;
+            locked.insert(path);
+        }
+        if touched {
+            ids.push(id);
+        }
     }
     Ok(RestoreSelection {
         ids,

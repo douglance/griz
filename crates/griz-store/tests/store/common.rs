@@ -31,6 +31,11 @@ impl Fixture {
         self.work.path().join(name)
     }
 
+    /// The tree an undo or restore is scoped to, in these tests.
+    pub fn root(&self) -> PathBuf {
+        self.work.path().to_path_buf()
+    }
+
     pub fn write(&self, name: &str, text: &str) -> Result<(), Box<dyn Error>> {
         std::fs::write(self.path(name), text)?;
         Ok(())
@@ -73,10 +78,12 @@ pub fn request(plan: &PlanRecord) -> ApplyRequest {
     }
 }
 
-/// A default undo request restoring every file, refusing on any stale one.
-pub fn undo_request(operation: &str) -> UndoRequest {
+/// A default undo request restoring every file, refusing on any stale one,
+/// scoped to `root`.
+pub fn undo_request(root: PathBuf, operation: &str) -> UndoRequest {
     UndoRequest {
         operation: operation.to_string(),
+        root,
         paths: Vec::new(),
         on_stale: OnStale::Refuse,
         purpose: "test".to_string(),

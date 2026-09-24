@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::{error::Error, fs, path::Path};
 
 const README: &str = include_str!("../../../../README.md");
-const SKILL: &str = include_str!("../../../../skills/griz/SKILL.md");
+const SKILL: &str = include_str!("../../../../skills/griz/references/compose.md");
 pub(super) const CONCURRENT: &str = "// changed after the check\n";
 
 pub(super) struct Observed {
@@ -32,6 +32,14 @@ fn example(which: &str) -> Result<String, Box<dyn Error>> {
     let first = blocks.first().ok_or("skill has no find example")?;
     let second = blocks.get(1).ok_or("skill has no apply example")?;
     Ok(format!("const root = W;\n{first}\n{second}"))
+}
+
+#[test]
+fn documented_examples_are_available() -> TestResult {
+    for which in ["readme", "skill"] {
+        example(which)?;
+    }
+    Ok(())
 }
 
 fn fixture(work: &Path, count: usize, external_reference: bool) -> Result<String, Box<dyn Error>> {

@@ -9,7 +9,7 @@ use crate::{
     verdict::{Outcome, Verbosity},
 };
 use griz_core::Confidence;
-use griz_store::{Absorbed, ApplyRequest, OnStale, UndoRequest};
+use griz_store::{Absorbed, ApplyRequest, OnStale, RestoreScope, UndoRequest};
 use incurs::command::{CommandDef, TypedContext};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -149,6 +149,11 @@ async fn undo(
     options: UndoOptions,
 ) -> Result<(Value, Outcome), CmdError> {
     let level = Verbosity::resolve(options.verbosity.as_deref()).map_err(CmdError::invalid)?;
+    // One store holds every repository's history, so the scoping root is
+    // resolved (and canonicalized, aliases followed) the same way a file's
+    // path is, before it is used as a prefix that bounds what an undo may
+    // touch: `paths` narrows within it, but never crosses it.
+    let canonical_root = crate::context::root(options.root.as_deref())?;
     let root = input_root(options.root.as_deref())?;
     let paths = input_paths(&root, options.paths);
     let on_stale = parse_on_stale(options.on_stale.as_deref())?;
@@ -161,7 +166,7 @@ async fn undo(
     let mutation = Mutation {
         command: "undo",
         key: options.idempotency_key,
-        input: json!({ "operation": operation, "since": since, "paths": paths, "on_stale": on_stale }),
+        input: json!({ "operation": operation, "since": since, "root": canonical_root, "paths": paths, "on_stale": on_stale }),
     };
     let purpose = options.purpose;
     with_store(move |store| {
@@ -172,9 +177,18 @@ async fn undo(
             |store| {
                 let paths = crate::path_filters::resolve(&paths)?;
                 let op = match (operation.as_deref(), since.as_deref()) {
-                    (_, Some(since)) => store.restore_since(since, &paths, on_stale, &purpose)?,
+                    (_, Some(since)) => store.restore_since(
+                        since,
+                        RestoreScope {
+                            root: &canonical_root,
+                            paths: &paths,
+                        },
+                        on_stale,
+                        &purpose,
+                    )?,
                     (Some(operation), None) => store.undo(&UndoRequest {
                         operation: operation.to_string(),
+                        root: canonical_root.clone(),
                         paths: paths.clone(),
                         on_stale,
                         purpose: purpose.clone(),
