@@ -30,7 +30,7 @@ repository helper path; --griz BIN optionally selects the griz executable.
 
 | Argument | Meaning |
 |---|---|
-| --root ROOT --path PATH | File or directory under ROOT; repeat --path for more. |
+| --root ROOT --path PATH | Literal file or directory under ROOT; repeat --path for more. |
 | --literal TEXT, --regex REGEX, or --pattern PATTERN | Choose one match mode. Patterns match syntax in supported source languages. |
 | --replace TEXT or --transform FILE | Constant text, or caller Python defining replace(match) -> str. --transform - reads stdin. |
 | --expected-matches N --key KEY | Positive total match count and identity for this attempt. |
@@ -82,6 +82,9 @@ then operations. Only one input may read stdin. For example:
 
 Use `griz find --root ROOT --paths PATH --regex '(?s)\A.*\z' --format json`
 when you need whole-file observations; repeat `--paths` for more files.
+`--path` and `--paths` take literal names. Use native find's
+`--glob 'src/client-*.ts'` for filename patterns; for helper `--path` arguments,
+expand patterns in the caller and pass each resulting path.
 Read-only `find` takes no purpose or idempotency key. Its matches carry
 `path`, `text`, `range`, and `file_hash`; retain these in the caller program,
 build operations, and invoke the helper there. Do not add a round trip just to
