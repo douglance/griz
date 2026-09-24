@@ -5,105 +5,62 @@ description: Edit files with guarded griz find/plan/apply/undo primitives. Use f
 
 # griz
 
-The caller supplies the transformation. Compose in the host's Code Mode when
-available; for CLI execution, use the guarded helper below.
+Supply the transformation; griz guards the write.
 
-## Execution path
+- **Code Mode/MCP:** read [composition](references/compose.md).
+- **CLI:** use `crates/griz/examples/guarded_cli.py` (HELPER below). It finds,
+  plans, applies, checks, and attempts guarded undo when the check fails.
 
-- **Host Code Mode/MCP:** read [composition](references/compose.md), then compose
-  the primitives and check in one program. Return only the verdict and IDs.
-- **CLI:** run the repository's crates/griz/examples/guarded_cli.py directly.
-  It plans and applies guarded edits, runs the check, and attempts guarded undo
-  after a failed check.
-  The recipe below contains routine arguments; do not also read primitive help
-  or helper source unless a missing option or reported failure requires it.
+Read this guide once. Batch independent context reads; do not rediscover supplied
+paths, repeat successful checks, or read helper source/help without a missing
+option or reported failure. Supervise long checks with apoc execution start;
+wait on their ID before retrying or undoing.
 
-Read the skill once. Batch independent context reads; do not list files only to
-rediscover supplied paths. Do not reload an identical guide or repeat a successful
-helper check. Supervise long checks with apoc execution start; retain its ID and
-wait for a terminal outcome before retrying or undoing.
+## CLI
 
-## CLI recipe
+Use an absolute ROOT, a stable KEY per attempt, and optionally `--griz BIN`.
+For one step, run `python3 HELPER` with these arguments:
 
-Use an absolute root and a stable key for one attempt. HELPER below is the
-repository helper path; --griz BIN optionally selects the griz executable.
-
-| Argument | Meaning |
+| Arguments | Meaning |
 |---|---|
-| --root ROOT --path PATH | Literal file or directory under ROOT; repeat --path for more. |
-| --glob GLOB | Filename filter; repeat for more, prefix ! to exclude. Searches ROOT when no --path is given. |
-| --literal TEXT, --regex REGEX, or --pattern PATTERN | Choose one match mode. Patterns match syntax in supported source languages. |
-| --replace TEXT or --transform FILE | Constant text, or caller Python defining replace(match) -> str. --transform - reads stdin. |
-| --expected-matches N --key KEY | Positive total match count and identity for this attempt. |
-| --check CMD ARG... | Check executable and arguments; this option must be last. |
-| --language LANG | Optional structural file-language filter, not an extension override. |
-| --show-check-output | Include the check command and success logs; failures retain both. |
+| `--root ROOT`, `--path PATH` | Root and literal file/directory; repeat path. |
+| `--glob GLOB` | Repeatable filename filter; prefix `!` to exclude. Searches ROOT without path. Quote globs. |
+| `--literal TEXT` / `--regex REGEX` / `--pattern PATTERN` | Choose one; patterns match syntax. Optional `--language LANG` filters structural files. |
+| `--replace TEXT` / `--transform FILE` | Constant or Python `replace(match) -> str`; `--transform -` reads stdin. |
+| `--expected-matches N --key KEY` | Positive total match count and attempt identity. |
+| `--check CMD ARG...` | Check executable and arguments; must be last. |
 
-For several known edit/check steps, compose `edit` calls in one Python program.
-It takes the same CLI argument list and an optional callable transform:
+Paths are literal; use globs for patterns. Inclusion globs can select gitignored
+files; exclude them explicitly when needed.
 
+Compose known edit/check steps in one Python program:
 ~~~python
 import json, runpy
 helper = runpy.run_path("HELPER")
 common = ["--root", "ROOT", "--griz", "BIN"]
 result = helper["edit"](
-    common + ["--path", "PATH", "--pattern", "foo($ARG)",
+    common + ["--glob", "**/*.ts", "--pattern", "foo($ARG)",
               "--expected-matches", "N", "--key", "KEY",
               "--check", "cargo", "check"],
-    transform=lambda match: "bar(" + match["vars"]["ARG"] + ")",
+    transform=lambda m: "bar(" + m["vars"]["ARG"] + ")",
 )
 print(json.dumps(result))
 ~~~
+Call `edit` again for the next step with a new key. Transforms return text;
+they never write files. Matches expose `text`, `vars` (structural captures),
+`captures` (regex group 1 at index 0), `path`, and `range`. For whole JSON,
+use `--regex '(?s)\A.*\z'`, parse `text`, change values, and return serialized text.
+Do not combine a callable with replace, transform-file, patch, or ops input.
 
-Call `edit` again in that program for the next known step, using a new key.
-It returns only on success; a non-passed result raises `helper["CommandFailure"]`
-with the complete receipt in `.report` and as compact JSON in the exception text.
-An unhandled failure stops later steps.
-Continue after an expected rejection only when its check exit code is the one
-you intended and `report["undo"]["outcome"] == "passed"`. Parser errors also stop.
-Do not combine a callable with `--replace`, `--transform`, `--patch`, or `--ops`.
-For one standalone step, pass the table's arguments directly to `python3 HELPER`.
+`edit` returns a passed check receipt or raises `helper["CommandFailure"]` with
+the receipt in `.report`. Exceptions stop later steps. Continue after an expected
+rejection only when the check exit code is the intended one AND
+`report["undo"]["outcome"] == "passed"`. Inspect stage/undo on other failures;
+retain the operation ID if a check cannot start or is interrupted. The helper
+does not automatically resume interrupted work. Replays verify recorded file
+fingerprints; on refusal, inspect current files and use a new key for a new edit.
+Success logs are omitted unless `--show-check-output`; failures retain them.
 
-The function returns text, never writes source files. Matches expose text,
-vars for structural captures, captures for regex groups (group 1 at index 0),
-path, and byte range. For whole JSON files, use --regex '(?s)\A.*\z',
-parse match["text"], change the selected values, and return serialized text.
-
-For a caller-written Codex patch, replace match/replacement options with
-`--patch FILE --expected-files N --expected-edits N`; `--patch -` reads stdin.
-Patch paths resolve under ROOT; FILE resolves from the caller's directory.
-JSON operation arrays use `--ops FILE` with the same counts; `--ops -` reads stdin.
-Pass both flags to combine a patch and operations in one batch: patch first,
-then operations. Only one input may read stdin. For example:
-
-~~~json
-[{"op":"create","path":"new.txt","text":"hello\n"},
- {"op":"replace","path":"old.txt","find":"before","replace":"after"}]
-~~~
-
-Use `griz find --root ROOT --paths PATH --regex '(?s)\A.*\z' --format json`
-when you need whole-file observations; repeat `--paths` for more files.
-`--path` and `--paths` take literal names. Both native find and the helper accept
-`--glob 'src/client-*.ts'` for filename patterns; quote globs to pass them intact.
-Combine `--path src` and `--glob '**/*.ts'` to filter within that directory.
-As in native find, inclusion globs can select gitignored files; exclude them
-explicitly with `--glob '!PATH'` when needed.
-Read-only `find` takes no purpose or idempotency key. Its matches carry
-`path`, `text`, `range`, and `file_hash`; retain these in the caller program,
-build operations, and invoke the helper there. Do not add a round trip just to
-print and copy fingerprints. Supply a fingerprint or old text for byte ranges.
-Keep match/transform options separate from patch/ops input. The same check and
-guarded undo run afterward.
-
-The helper checks process status, JSON, verdicts, and IDs. A passed receipt
-includes the check result. On failure, inspect its stage and undo verdict;
-retain the operation ID if the check could not start. It does not automatically
-resume an interrupted workflow. On an apply replay, it verifies the recorded file
-fingerprints before running the check. If it cannot verify that the current files
-match the operation, it stops with the operation ID; inspect the files and use a
-new key for a new edit attempt.
-
-For direct patch planning, new/whole files, partial selection, capture-target edits, language
-servers, formatters, tolerant anchors, merge conflicts, or history rewinds, read
-[advanced operations](references/advanced.md). Read that reference for direct CLI
-primitive spelling or full-record/error inspection too.
+For patches, operation arrays, whole-file creation, direct primitives, partial
+selection, capture-target or language-server edits, formatters, merges, and
+history, read [advanced operations](references/advanced.md).

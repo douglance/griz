@@ -1215,7 +1215,7 @@ class WorkflowTests(unittest.TestCase):
     def test_documented_ops_payload_runs(self):
         self.file = self.root / "old.txt"
         self.file.write_text("before\n")
-        guide = Path(__file__).resolve().parents[4] / "skills" / "griz" / "SKILL.md"
+        guide = Path(__file__).resolve().parents[4] / "skills" / "griz" / "references" / "advanced.md"
         payload = guide.read_text().split("~~~json\n", 1)[1].split("~~~", 1)[0]
         self.ops_options(payload)
         result = self.workflow()

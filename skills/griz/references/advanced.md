@@ -3,6 +3,35 @@
 Load only for the operation you need. For direct calls, follow the
 [composition guards](compose.md#guards-for-direct-calls).
 
+## Helper patch and operation input
+
+For a caller-written Codex patch, replace match/replacement options with
+`--patch FILE --expected-files N --expected-edits N`; `--patch -` reads stdin.
+Patch paths resolve under ROOT; FILE resolves from the caller's directory.
+JSON operation arrays use `--ops FILE` with the same counts; `--ops -` reads stdin.
+Pass both flags to combine a patch and operations in one batch: patch first,
+then operations. Only one input may read stdin. For example:
+
+~~~json
+[{"op":"create","path":"new.txt","text":"hello\n"},
+ {"op":"replace","path":"old.txt","find":"before","replace":"after"}]
+~~~
+
+Use `griz find --root ROOT --paths PATH --regex '(?s)\A.*\z' --format json`
+when you need whole-file observations; repeat `--paths` for more files.
+`--path` and `--paths` take literal names. Both native find and the helper accept
+`--glob 'src/client-*.ts'` for filename patterns; quote globs to pass them intact.
+Combine `--path src` and `--glob '**/*.ts'` to filter within that directory.
+As in native find, inclusion globs can select gitignored files; exclude them
+explicitly with `--glob '!PATH'` when needed.
+Read-only `find` takes no purpose or idempotency key. Its matches carry
+`path`, `text`, `range`, and `file_hash`; retain these in the caller program,
+build operations, and invoke the helper there. Do not add a round trip just to
+print and copy fingerprints. Supply a fingerprint or old text for byte ranges.
+Keep match/transform options separate from patch/ops input. The same check and
+guarded undo run afterward.
+
+
 ## CLI spelling and failure handling
 
 | Task | CLI | MCP |
