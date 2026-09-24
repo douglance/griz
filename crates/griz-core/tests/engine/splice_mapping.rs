@@ -2,7 +2,7 @@
 
 use crate::{
     common::{anchor, replace, source},
-    range_edits::range_edit,
+    range_edits::{range_edit, with_hash},
 };
 use griz_core::{ByteRange, Op, ProblemKind, build_plan};
 use std::path::PathBuf;
@@ -41,7 +41,7 @@ fn replay(mut range: ByteRange, splices: &[Step]) -> Option<ByteRange> {
 
 fn check_range(prefix: &[Op], text: &str, steps: &[Step], range: ByteRange) {
     let mut ops = prefix.to_vec();
-    ops.push(range_edit(range, None, "!"));
+    ops.push(with_hash(range_edit(range, None, "!"), ORIGINAL));
     let plan = build_plan(&ops, &source(&[("a.txt", ORIGINAL)]));
     let mut expected = text.to_string();
     if let Some(mapped) = replay(range, steps) {
@@ -110,13 +110,16 @@ fn an_extreme_range_after_earlier_splices_is_rejected_without_panicking() {
     let ops = [
         replace("a.txt", "12", "ABC"),
         replace("a.txt", "89", "XYZ"),
-        range_edit(
-            ByteRange {
-                start: 5,
-                end: usize::MAX,
-            },
-            None,
-            "!",
+        with_hash(
+            range_edit(
+                ByteRange {
+                    start: 5,
+                    end: usize::MAX,
+                },
+                None,
+                "!",
+            ),
+            ORIGINAL,
         ),
     ];
     let plan = build_plan(&ops, &source(&[("a.txt", ORIGINAL)]));

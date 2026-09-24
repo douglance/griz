@@ -97,3 +97,33 @@ fn assert_closed_objects(schema: &Value, node: &Value) -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn unchecked_range_is_a_recorded_mcp_plan_error() -> TestResult {
+    let tree = tempfile::tempdir()?;
+    let path = tree.path().join("probe.txt");
+    std::fs::write(&path, "before\n")?;
+    let observed = std::fs::read_to_string(&path)?;
+    std::fs::write(&path, "newest\n")?;
+    let mut mcp = Mcp::ready()?;
+    let response = mcp.call(
+        "tools/call",
+        &json!({"name":"plan","arguments":{
+            "root":tree.path(), "purpose":"range guard", "idempotency_key":"range",
+            "ops":[{"op":"replace","path":"probe.txt",
+                    "range":{"start":0,"end":observed.len()},"replace":"after!\n"}]
+        }}),
+    )?;
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .ok_or("no plan text")?;
+    let planned: Value = serde_json::from_str(text)?;
+    assert_eq!(planned["outcome"], "error", "{planned}");
+    assert!(
+        planned["id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("plan_"))
+    );
+    assert_eq!(std::fs::read_to_string(&path)?, "newest\n");
+    Ok(())
+}

@@ -188,6 +188,11 @@ Operations, applied in order:
 {op:"move",    path, to, expect_hash?}
 ```
 
+A `range` replacement requires `expect_hash` from the read/find used to compute
+it, or `find` containing the exact old text at that range. The hash protects the
+whole observed file; expected text protects the addressed span. An unchecked
+range produces an invalid plan, which cannot be applied.
+
 ## CLI programs
 
 The CLI uses positional identifiers and repeated flags; MCP uses named JSON fields.

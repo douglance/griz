@@ -115,6 +115,7 @@ fn plan_replace(overlay: &mut Overlay<'_>, index: usize, op: &Op) -> OpResult {
         return pattern_edit::replace_pattern(slot, index, path, &spec);
     }
     if let Some(range) = range {
+        require_range_guard(expect_hash.as_deref(), find.as_ref())?;
         return edits::replace_range(slot, index, path, *range, (find.as_ref(), replace));
     }
     let anchor = find
@@ -126,6 +127,18 @@ fn plan_replace(overlay: &mut Overlay<'_>, index: usize, op: &Op) -> OpResult {
         occurrence: *occurrence,
     };
     edits::replace_anchor(slot, index, path, &spec)
+}
+
+fn require_range_guard(
+    expected: Option<&str>,
+    anchor: Option<&crate::Anchor>,
+) -> Result<(), ProblemKind> {
+    if expected.is_none() && anchor.is_none() {
+        return Err(invalid(
+            "range needs `expect_hash` from read/find or expected old `find` text".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn invalid(message: String) -> ProblemKind {

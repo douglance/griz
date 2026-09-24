@@ -56,10 +56,12 @@ pub enum Op {
     Replace {
         /// File to change.
         path: PathBuf,
-        /// Text to locate. Required unless `range` or `pattern` is given.
+        /// Text to locate, or exact old text when `range` is given.
+        /// Required unless `range` or `pattern` is given.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         find: Option<Anchor>,
         /// Exact byte range in the file as it was when found.
+        /// Requires `expect_hash` or expected old `find` text.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         range: Option<ByteRange>,
         /// Structural pattern match, as an alternative to `find`/`range`.

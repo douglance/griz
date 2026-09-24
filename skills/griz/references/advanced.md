@@ -79,6 +79,11 @@ Several blocks for one file are fine, and several whole documents may follow
 one another in the same text. From the command line, `--patch @file`,
 `--ops @file`, and `--workspace-edit @file` read the input from a file.
 
+For replacement text computed from an existing file, retain the fingerprint
+returned by `read` or `find` as `expect_hash`. Byte-range replacements require
+that fingerprint or `find` with the exact old text at the range; unchecked ranges
+are rejected before apply.
+
 Replace a file's whole contents with
 `{ op: "create", path, text, overwrite: true }`; no range, no byte count.
 
