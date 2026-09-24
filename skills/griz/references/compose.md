@@ -28,6 +28,8 @@ them yourself when calling primitives directly.
 - Stop on any non-passed verdict. A failed plan's ID is for inspection; applying
   it does not carry its count or syntax expectations forward. An apply count
   mismatch writes nothing and needs no undo.
+- Set `verbosity: "warn"` on mutations: successful receipts stay compact, while
+  failures include a reason. For direct CLI calls, use `--verbosity warn`.
 - Direct griz CLI calls use --format json; the helper already emits JSON.
   Require exit zero and outcome == "passed" before using an ID. Keep stdout/stderr
   on failure; errors may have no ID. Do not extract only id through a pipeline.
@@ -49,7 +51,7 @@ const ops = found.matches.map(m => ({
 }));
 const plan = await griz.plan({
   root, ops, expect_edits: expectedMatches, expect_syntax: "clean",
-  purpose: "rename", idempotency_key: "rename-plan",
+  purpose: "rename", idempotency_key: "rename-plan", verbosity: "warn",
 });
 if (plan.outcome !== "passed") return { stage: "plan", ...plan };
 ```
@@ -75,7 +77,7 @@ there instead of printing and copying them through another turn.
 ```js
 const applied = await griz.apply({
   plan: plan.id, expect_files: found.files,
-  purpose: "rename", idempotency_key: "rename-apply",
+  purpose: "rename", idempotency_key: "rename-apply", verbosity: "warn",
 });
 if (applied.outcome !== "passed") return { stage: "apply", ...applied };
 const check = await apoc.execution_command({
@@ -86,6 +88,7 @@ const result = { stage: "check", operation: applied.id, check };
 if (check.outcome === "pending" || check.outcome === "passed") return result;
 const undone = await griz.undo({
   root, operation: applied.id, purpose: "roll back", idempotency_key: "rename-undo",
+  verbosity: "warn",
 });
 return { ...result, undo: undone };
 ```
