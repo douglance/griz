@@ -1,6 +1,7 @@
 """Run the shipped CLI example against an isolated real griz binary."""
 
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -65,6 +66,100 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.calls, calls)
         self.assertEqual(self.file.read_text(), "oldName\n")
         self.assertFalse(self.marker.exists())
+
+
+    def caller_args(self, query, key, check):
+        return [
+            "--griz", BINARY, "--root", str(self.root), "--path", self.file.name,
+            "--literal", query, "--expected-matches", "1", "--key", key,
+            "--check", *check,
+        ]
+
+
+    def test_documented_caller_recipe_runs(self):
+        self.file = self.root / "recipe.ts"
+        self.file.write_text("foo(value)\n")
+        guide = Path(__file__).resolve().parents[4] / "skills" / "griz" / "SKILL.md"
+        recipe = guide.read_text().split("~~~python\n", 1)[1].split("~~~", 1)[0]
+        for name, value in {
+            "HELPER": str(EXAMPLE), "ROOT": str(self.root),
+            "PATH": self.file.name, "N": "1", "KEY": "recipe", "BIN": BINARY,
+        }.items():
+            recipe = recipe.replace(json.dumps(name), repr(value))
+        recipe = recipe.replace('"cargo", "check"', repr(sys.executable) + ', "-c", "pass"')
+        result = REAL_RUN([sys.executable, "-c", recipe], env=os.environ,
+                          capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["outcome"], "passed")
+        self.assertEqual(self.file.read_text(), "bar(value)\n")
+
+    def test_caller_composes_callback_and_constant_edits(self):
+        check = [sys.executable, "-c", "pass"]
+        first = example.edit(self.caller_args("oldName", "first", check),
+                             transform=lambda match: match["text"].upper())
+        second = example.edit([
+            "--replace", "final_name",
+            *self.caller_args("OLDNAME", "second", check),
+        ])
+        self.assertEqual(first["outcome"], "passed")
+        self.assertEqual(second["outcome"], "passed")
+        self.assertNotEqual(first["operation"], second["operation"])
+        self.assertEqual(self.file.read_text(), "final_name\n")
+
+    def test_caller_failure_stops_sequence_after_guarded_undo(self):
+        self.file.write_text("user note\noldName\n")
+        check = [sys.executable, "-c", "pass"]
+        example.edit(self.caller_args("oldName", "first", check),
+                     transform=lambda match: "accepted")
+        with self.assertRaises(example.CommandFailure) as caught:
+            example.edit(
+                self.caller_args("accepted", "rejected",
+                                 [sys.executable, "-c", "raise SystemExit(17)"]),
+                transform=lambda match: "rejected",
+            )
+            self.marker.write_text("later step ran")
+        report = caught.exception.report
+        self.assertEqual(report["stage"], "check")
+        self.assertEqual(report["check"]["exit_code"], 17)
+        self.assertEqual(report["undo"]["outcome"], "passed")
+        self.assertEqual(self.file.read_text(), "user note\naccepted\n")
+        self.assertFalse(self.marker.exists())
+        resumed = example.edit(self.caller_args("accepted", "resumed", check),
+                               transform=lambda match: "finished")
+        self.assertEqual(resumed["outcome"], "passed")
+        self.assertEqual(self.file.read_text(), "user note\nfinished\n")
+
+    def test_caller_raises_before_later_steps_on_find_failure(self):
+        with self.assertRaises(example.CommandFailure) as caught:
+            example.edit(
+                ["--replace", "new", *self.caller_args(
+                    "missing", "missing", [sys.executable, "-c", "pass"])],
+            )
+            self.marker.write_text("later step ran")
+        self.assertEqual(caught.exception.report["stage"], "find")
+        self.assertEqual(self.file.read_text(), "oldName\n")
+        self.assertFalse(self.marker.exists())
+
+    def test_caller_rejects_ambiguous_or_invalid_callback_before_commands(self):
+        base = self.caller_args("oldName", "invalid", [sys.executable, "-c", "pass"])
+        cases = [
+            (["--replace", "new", *base], lambda match: "new"),
+            (["--transform", "-", *base], lambda match: "new"),
+            (base, "not callable"),
+            (["--griz", BINARY, "--root", str(self.root), "--patch", "-",
+              "--expected-files", "1", "--expected-edits", "1", "--key", "patch",
+              "--check", sys.executable, "-c", "pass"], lambda match: "new"),
+        ]
+        for args, transform in cases:
+            with self.subTest(args=args):
+                with (
+                    patch.object(example.subprocess, "run") as invoked,
+                    patch("sys.stdin", new=io.TextIOWrapper(io.BytesIO(b""))),
+                ):
+                    with patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
+                        example.edit(args, transform=transform)
+                    invoked.assert_not_called()
+        self.assertEqual(self.file.read_text(), "oldName\n")
 
     def test_success_and_repeated_paths(self):
         second = self.root / "another file.txt"

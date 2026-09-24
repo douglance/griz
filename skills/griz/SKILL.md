@@ -38,15 +38,29 @@ repository helper path; --griz BIN optionally selects the griz executable.
 | --language LANG | Optional structural file-language filter, not an extension override. |
 | --show-check-output | Optional success logs; failures already retain output. |
 
-Child command for a structural rename:
+For several known edit/check steps, compose `edit` calls in one Python program.
+It takes the same CLI argument list and an optional callable transform:
 
-~~~sh
-python3 HELPER --root ROOT --path PATH --pattern 'foo($ARG)' \
-  --transform - --expected-matches N --key KEY --check cargo check <<'PY'
-def replace(match):
-    return "bar(" + match["vars"]["ARG"] + ")"
-PY
+~~~python
+import json, runpy
+helper = runpy.run_path("HELPER")
+common = ["--root", "ROOT", "--griz", "BIN"]
+result = helper["edit"](
+    common + ["--path", "PATH", "--pattern", "foo($ARG)",
+              "--expected-matches", "N", "--key", "KEY",
+              "--check", "cargo", "check"],
+    transform=lambda match: "bar(" + match["vars"]["ARG"] + ")",
+)
+print(json.dumps(result))
 ~~~
+
+Call `edit` again in that program for the next known step, using a new key.
+It returns only on success; a non-passed result raises `helper["CommandFailure"]`
+with the complete receipt in `.report`, so an unhandled failure stops later steps.
+Continue after an expected rejection only when its check exit code is the one
+you intended and `report["undo"]["outcome"] == "passed"`. Parser errors also stop.
+Do not combine a callable with `--replace`, `--transform`, or `--patch`.
+For one standalone step, pass the table's arguments directly to `python3 HELPER`.
 
 The function returns text, never writes source files. Matches expose text,
 vars for structural captures, captures for regex groups (group 1 at index 0),

@@ -25,7 +25,7 @@ class CommandFailure(Exception):
     """A failed stage, retaining the command's original output."""
 
     def __init__(self, report):
-        super().__init__(report["reason"])
+        super().__init__(report.get("reason", "guarded edit did not pass"))
         self.report = report
 
 
@@ -260,14 +260,29 @@ def edit_and_check(options, transform=None):
     return report
 
 
-def run(options):
+def run(options, transform=None):
     try:
-        return edit_and_check(options, load_transform(getattr(options, "transform", None)))
+        if transform is None:
+            transform = load_transform(getattr(options, "transform", None))
+        return edit_and_check(options, transform)
     except CommandFailure as error:
         return error.report
 
 
-def validate_options(parser, options):
+def edit(arguments, *, transform=None):
+    """Run one guarded step; raise CommandFailure with its receipt on failure."""
+    report = run(parse_options(arguments, transform), transform)
+    if report["outcome"] != "passed":
+        raise CommandFailure(report)
+    return report
+
+
+def validate_options(parser, options, transform=None):
+    if transform is not None and (
+        not callable(transform)
+        or any(value is not None for value in (options.replace, options.transform, options.patch))
+    ):
+        parser.error("callback must be callable and cannot accompany replace, transform, or patch")
     if not options.check:
         parser.error("give a check command")
     if options.patch is not None:
@@ -281,13 +296,13 @@ def validate_options(parser, options):
         parser.error("expected file and edit counts are patch-only; use expected matches")
     if not options.path or options.expected_matches is None or options.expected_matches < 1:
         parser.error("give paths and a positive match count")
-    if options.replace is None and options.transform is None:
+    if options.replace is None and options.transform is None and transform is None:
         parser.error("give replace or transform")
     if any(value == "" for value in (options.literal, options.regex, options.pattern, options.transform)):
         parser.error("give a nonempty query and transform path")
 
 
-def parse_options():
+def parse_options(arguments=None, transform=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--path", action="append",
@@ -313,8 +328,8 @@ def parse_options():
                         help="Include stdout and stderr even when the check passes.")
     parser.add_argument("--check", nargs=argparse.REMAINDER, required=True,
                         help="Check executable and exact arguments; put this option last.")
-    options = parser.parse_args()
-    validate_options(parser, options)
+    options = parser.parse_args(arguments)
+    validate_options(parser, options, transform)
     options.root = str(Path(options.root).resolve())
     return options
 
