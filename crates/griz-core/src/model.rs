@@ -104,6 +104,9 @@ pub enum Op {
         /// Replacing a whole file needs no range and no byte count.
         #[serde(default)]
         overwrite: bool,
+        /// Fingerprint the original file must still have; absence is stale.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expect_hash: Option<String>,
     },
     /// Delete a file that must exist.
     Delete {

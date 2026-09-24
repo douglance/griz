@@ -56,6 +56,7 @@ fn a_new_files_original_fingerprint_stays_absent() {
             path: PathBuf::from("a.txt"),
             text: "one".to_string(),
             overwrite: false,
+            expect_hash: None,
         },
         guarded("one", "wrong", "one"),
     ];

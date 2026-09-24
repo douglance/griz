@@ -53,7 +53,11 @@ fn plan_op(overlay: &mut Overlay<'_>, index: usize, op: &Op) -> OpResult {
             path,
             text,
             overwrite,
-        } => create(overlay, index, path, text, *overwrite),
+            expect_hash,
+        } => {
+            guard(overlay, path, expect_hash.as_deref())?;
+            create(overlay, index, path, text, *overwrite)
+        }
         Op::Delete { path, expect_hash } => {
             guard(overlay, path, expect_hash.as_deref())?;
             let slot = overlay.slot(path).map_err(invalid)?;

@@ -138,3 +138,36 @@ fn invalid_fields_report_the_index_and_do_not_reserve_the_key() -> TestResult {
     assert!(!griz.path("new.txt").exists());
     Ok(())
 }
+
+#[test]
+fn overwrite_guard_refuses_stale_reads_and_allows_fresh_undo() -> TestResult {
+    let griz = Griz::new()?;
+    griz.write("probe.txt", "observed\n")?;
+    let read = griz.run(&["read", "probe.txt"])?;
+    let mut ops = json!([{"op":"create","path":"probe.txt","text":"replacement\n",
+        "overwrite":true,"expect_hash":read.json["hash"]}]);
+    griz.write("probe.txt", "newer\n")?;
+    let stale = griz.run(&[
+        "plan",
+        "--ops",
+        &ops.to_string(),
+        "--purpose",
+        "test",
+        "--idempotency-key",
+        "stale",
+        "--verbosity",
+        "trace",
+    ])?;
+    assert_eq!(stale.code, Some(1));
+    assert_eq!(stale.json["outcome"], "error", "{}", stale.json);
+    assert_eq!(stale.json["problems"][0]["kind"], "stale", "{}", stale.json);
+    assert_eq!(griz.read("probe.txt")?, "newer\n");
+    let read = griz.run(&["read", "probe.txt"])?;
+    ops[0]["expect_hash"] = read.json["hash"].clone();
+    let plan = griz.id(&["plan", "--ops", &ops.to_string()], "fresh")?;
+    let operation = griz.id(&["apply", &plan], "apply")?;
+    assert_eq!(griz.read("probe.txt")?, "replacement\n");
+    griz.id(&["undo", &operation], "undo")?;
+    assert_eq!(griz.read("probe.txt")?, "newer\n");
+    Ok(())
+}

@@ -69,6 +69,7 @@ fn range_positions_reset_after_whole_file_replacement() {
         path: PathBuf::from("a.txt"),
         text: "a\n\nbb\nCC\ndd\n".to_string(),
         overwrite: true,
+        expect_hash: None,
     };
     assert_positions(
         &[cc("CC"), overwrite, dd()],

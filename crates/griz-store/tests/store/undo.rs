@@ -16,6 +16,7 @@ fn undo_restores_every_file_byte_for_byte() -> TestResult {
             path: fx.path("new.rs"),
             text: "n\n".into(),
             overwrite: false,
+            expect_hash: None,
         },
     ])?;
     let applied = fx.store.apply(&request(&plan))?;

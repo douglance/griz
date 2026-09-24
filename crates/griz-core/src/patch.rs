@@ -207,6 +207,7 @@ fn to_ops(block: Block) -> Vec<Op> {
             path,
             text: joined(&lines),
             overwrite: false,
+            expect_hash: None,
         }],
         Block::Delete { path } => vec![Op::Delete {
             path,

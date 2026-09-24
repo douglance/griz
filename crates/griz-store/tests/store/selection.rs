@@ -11,6 +11,7 @@ fn selection_preserves_absence_after_a_cancelled_create() -> TestResult {
             path: fx.path("a.txt"),
             text: "planned\n".into(),
             overwrite: false,
+            expect_hash: None,
         },
         griz_core::Op::Delete {
             path: fx.path("a.txt"),

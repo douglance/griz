@@ -127,3 +127,50 @@ fn unchecked_range_is_a_recorded_mcp_plan_error() -> TestResult {
     assert_eq!(std::fs::read_to_string(&path)?, "newest\n");
     Ok(())
 }
+
+#[test]
+fn overwrite_guard_is_published_and_checked_over_mcp() -> TestResult {
+    let tree = tempfile::tempdir()?;
+    let path = tree.path().join("probe.txt");
+    std::fs::write(&path, "newer\n")?;
+    let mut mcp = Mcp::ready()?;
+    let schema = plan_input_schema(&mut mcp)?;
+    let branches = schema["properties"]["ops"]["items"]["oneOf"]
+        .as_array()
+        .ok_or("no operation branches")?;
+    let variants = branches
+        .iter()
+        .find_map(|v| v["oneOf"].as_array())
+        .ok_or("no operation variants")?;
+    let create = variants
+        .iter()
+        .find(|v| v["properties"]["op"]["const"] == "create")
+        .ok_or("no create schema")?;
+    assert!(
+        create["properties"].get("expect_hash").is_some(),
+        "{create}"
+    );
+    for (key, expected, outcome) in [
+        ("fresh", "newer\n", "passed"),
+        ("stale", "observed\n", "error"),
+    ] {
+        let response = mcp.call(
+            "tools/call",
+            &json!({"name":"plan","arguments":{
+                "root":tree.path(),"purpose":"test","idempotency_key":key,"verbosity":"trace",
+                "ops":[{"op":"create","path":"probe.txt","text":"replacement\n",
+                    "overwrite":true,"expect_hash":griz_core::content_hash(expected)}]
+            }}),
+        )?;
+        let text = response["result"]["content"][0]["text"]
+            .as_str()
+            .ok_or("no plan text")?;
+        let planned: Value = serde_json::from_str(text)?;
+        assert_eq!(planned["outcome"], outcome, "{planned}");
+        if outcome == "error" {
+            assert_eq!(planned["problems"][0]["kind"], "stale", "{planned}");
+        }
+    }
+    assert_eq!(std::fs::read_to_string(&path)?, "newer\n");
+    Ok(())
+}

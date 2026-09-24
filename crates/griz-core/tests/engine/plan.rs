@@ -91,6 +91,7 @@ fn create_delete_and_move_track_file_existence() {
             path: PathBuf::from("new.rs"),
             text: "n\n".to_string(),
             overwrite: false,
+            expect_hash: None,
         },
         Op::Delete {
             path: PathBuf::from("gone.rs"),
@@ -127,6 +128,7 @@ fn existing_targets_and_missing_sources_are_problems() {
             path: PathBuf::from("a.rs"),
             text: String::new(),
             overwrite: false,
+            expect_hash: None,
         },
         Op::Delete {
             path: PathBuf::from("none.rs"),

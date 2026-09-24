@@ -62,6 +62,7 @@ fn document_change_ops(
             path: path_of(&create.uri)?,
             text: String::new(),
             overwrite: create.options.as_ref().is_some_and(|o| o.overwrite),
+            expect_hash: None,
         }]),
         DocumentChange::Rename(rename) => Ok(vec![Op::Move {
             path: path_of(&rename.old_uri)?,

@@ -98,7 +98,10 @@ that fingerprint or `find` with the exact old text at the range; unchecked range
 are rejected before apply.
 
 Replace a file's whole contents with
-`{ op: "create", path, text, overwrite: true }`; no range, no byte count.
+`{ op: "create", path, text, overwrite: true, expect_hash: observed_hash }`;
+no range, no byte count. Pass the hash from the read/find used to construct the new text so a changed or deleted file is refused. The guard checks
+the original file, before any earlier edits in the same plan. Omit the hash only
+for an intentional overwrite that does not depend on previously read contents.
 
 ## Tolerant matches
 
