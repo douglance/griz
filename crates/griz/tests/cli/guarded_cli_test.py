@@ -949,6 +949,139 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.file.read_text(), "# user's note\noldName\n")
         self.assertFalse((self.root / "created file.txt").exists())
 
+
+    def test_ops_retry_after_rollback_stops_before_check(self):
+        self.ops_options()
+        self.options.check = [sys.executable, "-c", "raise SystemExit(17)"]
+        first = self.workflow()
+        self.assertEqual(first["undo"]["outcome"], "passed", first)
+        self.options.check = [sys.executable, "-c", "from pathlib import Path; Path('checked').touch()"]
+        self.calls.clear()
+        retry = self.workflow()
+        self.assertEqual(retry["outcome"], "error", retry)
+        self.assertEqual(retry["code"], "REPLAY_STALE", retry)
+        self.assertEqual(retry["operation"], first["operation"])
+        self.assertNotIn("check", self.calls)
+        self.assertNotIn("undo", self.calls)
+        self.assertEqual(self.file.read_text(), "oldName\n")
+        self.assertFalse((self.root / "created file.txt").exists())
+        self.assertFalse(self.marker.exists())
+        self.options.key = "new-attempt"
+        recovered = self.workflow()
+        self.assertEqual(recovered["outcome"], "passed", recovered)
+        self.assertNotEqual(recovered["operation"], first["operation"])
+        self.assertEqual(self.file.read_text(), "new_name\n")
+        self.assertTrue((self.root / "created file.txt").exists())
+        self.assertTrue(self.marker.exists())
+
+    def test_create_retry_after_rollback_does_not_claim_missing_file(self):
+        self.ops_options(json.dumps([
+            {"op": "create", "path": "created.txt", "text": "created\n"},
+        ]), files=1, edits=1)
+        self.options.check = [sys.executable, "-c", "raise SystemExit(17)"]
+        first = self.workflow()
+        self.assertEqual(first["undo"]["outcome"], "passed", first)
+        self.options.check = [sys.executable, "-c", "pass"]
+        self.calls.clear()
+        retry = self.workflow()
+        self.assertEqual(retry["outcome"], "error", retry)
+        self.assertEqual(retry["code"], "REPLAY_STALE")
+        self.assertEqual(retry["operation"], first["operation"])
+        self.assertNotIn("check", self.calls)
+        self.assertFalse((self.root / "created.txt").exists())
+
+    def test_replay_preserves_concurrent_non_utf8_bytes(self):
+        self.ops_options()
+        first = self.workflow()
+        self.assertEqual(first["outcome"], "passed", first)
+        self.file.write_bytes(b"concurrent\xff")
+        self.marker.unlink()
+        self.calls.clear()
+        retry = self.workflow()
+        self.assertEqual(retry["outcome"], "error", retry)
+        self.assertEqual(retry["code"], "REPLAY_STALE")
+        self.assertEqual(retry["operation"], first["operation"])
+        self.assertEqual(self.file.read_bytes(), b"concurrent\xff")
+        self.assertFalse(self.marker.exists())
+        self.assertNotIn("check", self.calls)
+        self.assertNotIn("undo", self.calls)
+
+    def test_replay_distinguishes_deletion_empty_file_and_recreation(self):
+        empty = self.root / "empty.txt"
+        self.ops_options(json.dumps([
+            {"op": "delete", "path": self.file.name},
+            {"op": "create", "path": empty.name, "text": ""},
+        ]), files=2, edits=2)
+        first = self.workflow()
+        self.assertEqual(first["outcome"], "passed", first)
+        replay = self.workflow()
+        self.assertEqual(replay["outcome"], "passed", replay)
+        self.assertEqual(replay["operation"], first["operation"])
+        self.assertEqual(empty.read_bytes(), b"")
+        self.assertFalse(self.file.exists())
+        self.file.write_bytes(b"")
+        self.marker.unlink()
+        self.calls.clear()
+        stale = self.workflow()
+        self.assertEqual(stale["outcome"], "error", stale)
+        self.assertEqual(stale["code"], "REPLAY_STALE")
+        self.assertEqual(self.file.read_bytes(), b"")
+        self.assertFalse(self.marker.exists())
+        self.assertNotIn("check", self.calls)
+
+    def test_replay_unreadable_file_retains_operation_and_stops(self):
+        self.ops_options()
+        first = self.workflow()
+        self.assertEqual(first["outcome"], "passed", first)
+        self.marker.unlink()
+        original_open = Path.open
+        target = self.file.resolve()
+        def unreadable(path, *args, **kwargs):
+            if path == target and args and args[0] == "rb":
+                raise PermissionError("denied replay observation")
+            return original_open(path, *args, **kwargs)
+        self.calls.clear()
+        with patch.object(Path, "open", unreadable):
+            retry = self.workflow()
+        self.assertEqual(retry["outcome"], "error", retry)
+        self.assertEqual(retry["operation"], first["operation"])
+        self.assertIn("denied replay observation", retry["reason"])
+        self.assertNotIn("check", self.calls)
+        self.assertFalse(self.marker.exists())
+
+
+    def test_replay_operation_lookup_failure_retains_operation(self):
+        self.ops_options()
+        first = self.workflow()
+        self.assertEqual(first["outcome"], "passed", first)
+        self.marker.unlink()
+        def unavailable(stage, argv, kwargs):
+            if stage == "get":
+                return subprocess.CompletedProcess(argv, 1, b'{"code":"UNAVAILABLE"}', b"")
+        self.calls.clear()
+        retry = self.workflow(unavailable)
+        self.assertEqual(retry["outcome"], "error", retry)
+        self.assertEqual(retry["stage"], "get", retry)
+        self.assertEqual(retry["operation"], first["operation"])
+        self.assertNotIn("check", self.calls)
+        self.assertFalse(self.marker.exists())
+
+    def test_replay_non_regular_path_stops_before_check(self):
+        self.ops_options()
+        first = self.workflow()
+        self.assertEqual(first["outcome"], "passed", first)
+        self.file.unlink()
+        self.file.mkdir()
+        self.marker.unlink()
+        self.calls.clear()
+        retry = self.workflow()
+        self.assertEqual(retry["outcome"], "error", retry)
+        self.assertEqual(retry["operation"], first["operation"])
+        self.assertIn("regular file", retry["reason"])
+        self.assertNotIn("check", self.calls)
+        self.assertTrue(self.file.is_dir())
+        self.assertFalse(self.marker.exists())
+
     def ops_options(self, text=None, files=2, edits=2):
         payload = self.root / "input ops.json"
         payload.write_text(text if text is not None else json.dumps([

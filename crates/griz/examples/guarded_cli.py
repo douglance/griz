@@ -11,6 +11,7 @@ Use --help for arguments; inspect this implementation when debugging the helper.
 """
 
 import argparse
+import stat
 from contextlib import redirect_stdout
 from copy import deepcopy
 import json
@@ -44,7 +45,7 @@ def invoke(argv, root, stage):
     return result
 
 
-def griz_command(options, stage, arguments, id_prefix=None):
+def griz_command(options, stage, arguments, id_prefix=None, *, require_outcome=True):
     argv = [options.griz, stage, *arguments, "--format", "json"]
     result = invoke(argv, options.root, stage)
     report = {
@@ -64,7 +65,7 @@ def griz_command(options, stage, arguments, id_prefix=None):
         refuse("griz did not return a JSON object")
     if not isinstance(body, dict):
         refuse("griz did not return a JSON object")
-    if body.get("outcome") != "passed":
+    if require_outcome and body.get("outcome") != "passed":
         refuse("griz did not report a passed outcome")
     if id_prefix is not None:
         identifier = body.get("id")
@@ -283,6 +284,44 @@ def check_report(options, check):
     return report
 
 
+
+def current_file_hash(path):
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(metadata.st_mode):
+        raise OSError("replayed path is no longer a regular file")
+    import hashlib
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_replayed_apply(options, applied):
+    if not applied.get("replayed"):
+        return
+    operation = griz_command(options, "get", [applied["id"]], require_outcome=False)
+    for file in operation["files"]:
+        path = Path(file["path"])
+        try:
+            current = current_file_hash(path)
+        except OSError as error:
+            raise CommandFailure({
+                "stage": "apply", "outcome": "error", "path": str(path),
+                "reason": "cannot verify replayed operation: " + str(error),
+            }) from error
+        if current != file["after_hash"]:
+            raise CommandFailure({
+                "stage": "apply", "outcome": "error", "code": "REPLAY_STALE",
+                "path": str(path),
+                "reason": "replayed operation no longer matches current files; "
+                          "inspect changes and use a new key to plan another edit",
+            })
+
+
 def edit_and_check(options, transform=None):
     plan, file_count = plan_edit(options, transform)
     applied = griz_command(options, "apply", [
@@ -291,6 +330,7 @@ def edit_and_check(options, transform=None):
     ], "op")
     report = {"stage": "check", "operation": applied["id"]}
     try:
+        verify_replayed_apply(options, applied)
         check = invoke(options.check, options.root, "check")
     except CommandFailure as error:
         return {**report, **error.report}

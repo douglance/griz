@@ -92,7 +92,10 @@ guarded undo run afterward.
 The helper checks process status, JSON, verdicts, and IDs. A passed receipt
 includes the check result. On failure, inspect its stage and undo verdict;
 retain the operation ID if the check could not start. It does not automatically
-resume an interrupted workflow.
+resume an interrupted workflow. On an apply replay, it verifies the recorded file
+fingerprints before running the check. If it cannot verify that the current files
+match the operation, it stops with the operation ID; inspect the files and use a
+new key for a new edit attempt.
 
 For direct patch planning, new/whole files, partial selection, capture-target edits, language
 servers, formatters, tolerant anchors, merge conflicts, or history rewinds, read
