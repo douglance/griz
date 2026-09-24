@@ -56,7 +56,8 @@ print(json.dumps(result))
 
 Call `edit` again in that program for the next known step, using a new key.
 It returns only on success; a non-passed result raises `helper["CommandFailure"]`
-with the complete receipt in `.report`, so an unhandled failure stops later steps.
+with the complete receipt in `.report` and as compact JSON in the exception text.
+An unhandled failure stops later steps.
 Continue after an expected rejection only when its check exit code is the one
 you intended and `report["undo"]["outcome"] == "passed"`. Parser errors also stop.
 Do not combine a callable with `--replace`, `--transform`, or `--patch`.

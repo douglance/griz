@@ -93,6 +93,43 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["outcome"], "passed")
         self.assertEqual(self.file.read_text(), "bar(value)\n")
 
+
+    def caller_failure_receipt(self, mode):
+        self.file.write_text("user note\noldName\n")
+        check = "raise SystemExit(17)"
+        if mode == "undo_refused":
+            check = ("from pathlib import Path;p=Path(" + repr(self.file.name)
+                     + ");p.write_text(p.read_text()+'concurrent\\n');raise SystemExit(17)")
+        args = ["--replace", "new_name",
+                *self.caller_args("oldName", mode, [sys.executable, "-c", check])]
+        program = ("import runpy\nhelper = runpy.run_path(" + repr(str(EXAMPLE)) + ")\n"
+                   + "arguments = " + repr(args) + "\nhelper['edit'](arguments)\n")
+        result = REAL_RUN([sys.executable, "-B", "-c", program], env=os.environ,
+                          input="", capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+        payload = result.stderr.rsplit("CommandFailure: ", 1)[-1].strip()
+        self.assertTrue(payload.startswith("{"), result.stderr)
+        report = json.loads(payload)
+        self.assertEqual(report["stage"], "check")
+        self.assertEqual(report["check"]["exit_code"], 17)
+        log = REAL_RUN([BINARY, "log", "--json"], cwd=self.root, env=os.environ,
+                       capture_output=True, text=True, check=True)
+        apply = next(op for op in json.loads(log.stdout)["operations"] if op["kind"] == "apply")
+        self.assertEqual(report["operation"], apply["id"])
+        return report
+
+    def test_caller_unhandled_failure_reports_successful_undo(self):
+        report = self.caller_failure_receipt("restored")
+        self.assertEqual(report["undo"]["outcome"], "passed")
+        self.assertEqual(self.file.read_text(), "user note\noldName\n")
+
+    def test_caller_unhandled_failure_reports_refused_undo(self):
+        report = self.caller_failure_receipt("undo_refused")
+        self.assertEqual(report["undo"]["outcome"], "error")
+        self.assertEqual(report["undo"]["stage"], "undo")
+        self.assertEqual(self.file.read_text(), "user note\nnew_name\nconcurrent\n")
+
     def test_caller_composes_callback_and_constant_edits(self):
         check = [sys.executable, "-c", "pass"]
         first = example.edit(self.caller_args("oldName", "first", check),

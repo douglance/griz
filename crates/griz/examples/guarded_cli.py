@@ -25,7 +25,7 @@ class CommandFailure(Exception):
     """A failed stage, retaining the command's original output."""
 
     def __init__(self, report):
-        super().__init__(report.get("reason", "guarded edit did not pass"))
+        super().__init__(json.dumps(report, separators=(",", ":")))
         self.report = report
 
 
