@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 (2026-09-25)
+
+- Shorten the main agent guide from 5,949 to 3,322 bytes. Move advanced patch and operations examples into a linked reference, keeping routine editing instructions close at hand.
+- Keep the executable documentation check aligned with the moved operations example.
+- No CLI, MCP, or edit-safety behavior changes from 0.6.0.
+
 ## 0.3.0 (2026-09-21)
 
 - Every JSON input reads from a file: `plan --ops @path` and `--workspace-edit @path`, as `--patch` already did. A missing file is an error naming it.
