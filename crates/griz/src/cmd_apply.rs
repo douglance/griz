@@ -119,7 +119,8 @@ struct UndoOptions {
     paths: Option<Vec<String>>,
     /// When a file changed since it was written: refuse (default) or merge.
     on_stale: Option<String>,
-    /// Directory relative paths resolve from. Defaults to the current directory.
+    /// Restore boundary and base for relative paths. Defaults to the CLI or MCP
+    /// server's working directory; pass the target project's root.
     root: Option<String>,
     /// Why the files are being restored.
     purpose: String,
