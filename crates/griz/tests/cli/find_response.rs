@@ -144,10 +144,12 @@ fn typed_find_retains_validation_error_for_non_utf8_result_paths() -> TestResult
         }
         let run = griz.run(&args)?;
         assert_eq!(run.code, Some(1));
-        assert_eq!(run.json["error"]["code"], "VALIDATION_ERROR");
         assert_eq!(
-            run.json["error"]["message"],
-            "path contains invalid UTF-8 characters"
+            run.json,
+            json!({
+                "code": "VALIDATION_ERROR",
+                "message": "path contains invalid UTF-8 characters"
+            })
         );
     }
     Ok(())

@@ -12,7 +12,7 @@ import time
 
 EXPECTED_HASH = {
     64: "095c9f2fc59713d124a55214013a8c80310ba0693a7bf46808809ba5890fddf1",
-    256: "de118d0ad2d3c09e926f136c3d64f3577f9df9b72098ae10e4942b47c7f45677",
+    128: "57cf95a71c9fa3e2ecc811fec3b4efda31a4cf237144ba2efaaa97f42692e288",
 }
 
 
@@ -122,7 +122,7 @@ def main():
     parser.add_argument("--before", required=True, type=Path)
     parser.add_argument("--after", required=True, type=Path)
     parser.add_argument("--samples", type=int, default=21)
-    parser.add_argument("--blocks", type=int, choices=[64, 256], default=64)
+    parser.add_argument("--blocks", type=int, choices=[64, 128], default=64)
     parser.add_argument("--limit", type=int)
     args = parser.parse_args()
     if args.samples < 3:

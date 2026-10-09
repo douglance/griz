@@ -349,7 +349,7 @@ python3 crates/griz/examples/measure_search_latency.py \
 
 This creates an isolated 7.34 MB fixture through griz, alternates both binaries,
 and checks every range, position, capture, and SHA-256 fingerprint. Add
-`--blocks 256 --limit 64 --samples 51` to measure a paged search over 29.36 MB.
+`--blocks 128 --limit 64 --samples 51` to measure a paged search over 14.68 MB.
 It reports first-request latency separately from repeated-call medians; a warm
 speedup does not describe cold searches. Measure uncached
 SHA and cache churn with the ignored `search_stage_measurement` and
