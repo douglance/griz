@@ -4,8 +4,11 @@ mod absorb_replay;
 mod anchor_overlap;
 mod apply_expect;
 mod at_file;
+#[cfg(target_vendor = "apple")]
+mod batch_sync;
 mod blob_ids;
 mod case_aliases;
+mod commit_dependencies;
 mod common;
 mod compact_replay;
 mod compose;

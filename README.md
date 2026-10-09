@@ -116,10 +116,12 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   its Unix access and executable bits, including during undo and crash recovery.
   A later permission change is retained when undo replaces that file. Newly
   created files, including restores of deleted files, use creation defaults.
-- **Large write batches stage concurrently.** Batches with at least 32 writes
-  use at most four staging workers. Every file keeps its full sync, and every
-  worker finishes before the operation is journaled. Final renames retain plan
-  order. On staging errors, workers finish and attempt cleanup before returning.
+- **Batch work has bounded concurrency.** Snapshot reads use at most four
+  workers. Staging uses at most four workers, each with one open stage file,
+  plus one retained flush descriptor per device. All stages are synchronized
+  before journaling.
+  Journal entries retain plan order; independent source renames use at most 16
+  workers. Workers finish and attempt temporary cleanup before errors return.
 - **Formatters do not break undo.** Run a formatter after `apply`, then
   `absorb` the operation; undo restores the text from before the apply.
   Concurrent absorbs retain one another's selected-file updates. Undo and span
@@ -354,6 +356,81 @@ It reports first-request latency separately from repeated-call medians; a warm
 speedup does not describe cold searches. Measure uncached
 SHA and cache churn with the ignored `search_stage_measurement` and
 `cache_churn_measurement` tests in release mode.
+
+## Batch write implementation
+
+On Apple platforms, staging synchronizes each file, then requests a full device
+flush after all staging workers finish. Only then can the operation be
+journaled as applying and source files renamed. Independent destinations can
+commit concurrently; every worker finishes before the operation is marked applied.
+Conflicting ancestor/child destinations are refused before journaling. Other
+platforms retain a full file synchronization for each stage.
+
+Planning uses the same staging primitive for new content blobs. Text is borrowed.
+Staging groups contain at most 64 MiB of content; in builds supporting binary
+payloads, decoding can temporarily add one incoming file. This does not bound
+total plan or process memory. Each group is synchronized before its blob names
+become visible, and all groups finish before the plan is stored.
+
+Before:
+
+```text
++-----------------------+
+| Stage + full sync/file|
++-----------+-----------+
+            |
+            v
++-----------------------+
+| Journal, then rename  |
++-----------------------+
+```
+
+After:
+
+```text
++-----------------------+
+| Stage, then fsync     |
++-----------+-----------+
+            | all workers finish
+            v
++-----------------------+
+| Full sync per device  |
++-----------+-----------+
+            |
+            v
++-----------------------+
+| Journal + commit pool |
++-----------------------+
+```
+
+Compare complete calls against a prior installed build:
+
+```sh
+python3 crates/griz/examples/compare_write_latency.py \
+  --baseline /path/to/old/griz --candidate /path/to/new/griz \
+  --transport mcp --samples 31 --files 32 256
+```
+
+The benchmark alternates both binaries, writes fresh revisions, and verifies all
+file bytes and the exact unique journal path inventory with independent SHA-256
+values. It records both executable hashes. The reported pipeline sums find,
+plan, and apply call latency; caller preparation, verification, and undo are
+excluded. Undo is measured separately. Batch size, transport, platform, and
+filesystem affect the speedup; a large-batch result does not describe single files.
+
+On macOS, observe the actual synchronization and rename calls:
+
+```sh
+clang -dynamiclib -Wall -Wextra -Werror crates/griz/examples/trace_write_sync.c -o /tmp/griz-sync-observer.dylib
+python3 crates/griz/examples/verify_write_sync.py \
+  --binary target/debug/griz --library /tmp/griz-sync-observer.dylib --blob-groups
+```
+
+The observer requires one successful full flush per source device after all file
+synchronizations and before any source rename. A 96 MiB plan must publish blobs
+in observed groups no larger than 64 MiB. The observer rejects unknown fcntl
+signatures; the proof fails if a covered run reaches one. These checks establish
+requested synchronization ordering, not recovery from a physical power cut.
 
 ## Use
 

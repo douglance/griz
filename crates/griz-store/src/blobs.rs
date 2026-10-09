@@ -64,7 +64,7 @@ impl Store {
             .map_err(|_| StoreError::NotFound(format!("text {hash}")))
     }
 
-    fn blob_path(&self, hash: &str) -> std::path::PathBuf {
+    pub(crate) fn blob_path(&self, hash: &str) -> std::path::PathBuf {
         let (dir, rest) = hash.split_at(2.min(hash.len()));
         self.home().join("blobs").join(dir).join(rest)
     }

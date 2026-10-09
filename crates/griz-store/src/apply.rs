@@ -74,8 +74,11 @@ impl Store {
         let paths: Vec<PathBuf> = record.files.iter().map(|file| file.path.clone()).collect();
         let _locks = self.lock_paths(&paths)?;
         let mut targets = Vec::with_capacity(record.files.len());
-        for change in &record.files {
-            let resolved = self.resolve_change(change, request.on_stale)?;
+        let mut changes: Vec<_> = record.files.iter().collect();
+        let resolved = crate::parallel::map(&mut changes, |change| {
+            self.resolve_change(change, request.on_stale)
+        })?;
+        for (change, resolved) in changes.into_iter().zip(resolved) {
             record_resolved(&mut op, &mut targets, change.path.clone(), resolved);
         }
         if !op.conflicts.is_empty() {
@@ -140,13 +143,15 @@ impl Store {
         let locked: Vec<PathBuf> = chosen.iter().map(|file| file.path.clone()).collect();
         let _locks = self.lock_paths(&locked)?;
         let original = self.operation(&request.operation)?;
-        let chosen = original
+        let mut chosen: Vec<_> = original
             .files
             .iter()
-            .filter(|file| request.paths.is_empty() || request.paths.contains(&file.path));
+            .filter(|file| request.paths.is_empty() || request.paths.contains(&file.path))
+            .collect();
+        let resolved =
+            crate::parallel::map(&mut chosen, |file| self.undo_target(file, request.on_stale))?;
         let mut targets = Vec::new();
-        for file in chosen {
-            let resolved = self.undo_target(file, request.on_stale)?;
+        for (file, resolved) in chosen.into_iter().zip(resolved) {
             record_resolved(&mut op, &mut targets, file.path.clone(), resolved);
         }
         if targets.is_empty() {
