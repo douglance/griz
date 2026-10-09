@@ -6,7 +6,7 @@ use std::{error::Error, fs};
 
 const FILES: usize = 64;
 
-fn fixture() -> Result<(Griz, String), Box<dyn Error>> {
+pub(crate) fn fixture() -> Result<(Griz, String), Box<dyn Error>> {
     let griz = Griz::new()?;
     let mut ops = Vec::new();
     for index in 0..FILES {
@@ -20,7 +20,7 @@ fn fixture() -> Result<(Griz, String), Box<dyn Error>> {
     Ok((griz, plan))
 }
 
-fn check_files(griz: &Griz, prefix: &str) -> TestResult {
+pub(crate) fn check_files(griz: &Griz, prefix: &str) -> TestResult {
     for index in 0..FILES {
         assert_eq!(
             griz.read(&format!("f{index:03}.txt"))?,
@@ -30,7 +30,7 @@ fn check_files(griz: &Griz, prefix: &str) -> TestResult {
     Ok(())
 }
 
-fn check_stages(griz: &Griz) -> TestResult {
+pub(crate) fn check_stages(griz: &Griz) -> TestResult {
     for entry in fs::read_dir(griz.work.path())? {
         assert!(!entry?.file_name().to_string_lossy().contains(".griz-"));
     }

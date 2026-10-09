@@ -64,35 +64,71 @@ impl Drop for StagedFile {
     }
 }
 
-/// Writes and syncs a temporary sibling, returning its cleanup owner.
+/// Writes and syncs raw bytes to a temporary sibling, returning its cleanup owner.
 ///
 /// # Errors
 /// Returns an error when the directory or file cannot be written.
-pub fn stage(path: &Path, text: &str) -> std::io::Result<StagedFile> {
-    stage_with_id(path, text, uuid::Uuid::now_v7())
+pub(crate) fn stage_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<StagedFile> {
+    stage_bytes_with_id(path, bytes, uuid::Uuid::now_v7())
 }
 
-pub(crate) fn stage_with_id(
+pub(crate) fn stage_bytes_with_id(
     path: &Path,
-    text: &str,
+    bytes: &[u8],
     batch: uuid::Uuid,
 ) -> std::io::Result<StagedFile> {
+    stage_content(path, bytes, batch, None)
+}
+
+fn stage_content(
+    path: &Path,
+    bytes: &[u8],
+    batch: uuid::Uuid,
+    sync: Option<&crate::batch_sync::BatchSync>,
+) -> std::io::Result<StagedFile> {
+    let open = prepare_bytes(path, bytes, batch)?;
+    sync.map_or_else(
+        || open.file.sync_all(),
+        |batch| crate::batch_sync::sync_file(batch, &open.file),
+    )?;
+    Ok(open.staged)
+}
+
+pub(crate) struct OpenStage {
+    file: std::fs::File,
+    staged: StagedFile,
+}
+
+pub(crate) fn prepare_bytes(
+    path: &Path,
+    bytes: &[u8],
+    batch: uuid::Uuid,
+) -> std::io::Result<OpenStage> {
     let permissions = existing_permissions(path)?;
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = path.parent().filter(|_| permissions.is_none()) {
         std::fs::create_dir_all(parent)?;
     }
     let temp = temp_sibling(path, batch);
-    let mut file =
+    let file =
         create_staged(&temp, permissions.as_ref()).map_err(|error| stage_error(path, error))?;
-    let staged = StagedFile {
-        path: temp,
-        committed: false,
+    let mut open = OpenStage {
+        file,
+        staged: StagedFile {
+            path: temp,
+            committed: false,
+        },
     };
     failpoint("after_stage_create");
-    let result = write_staged(&mut file, text, permissions);
-    drop(file);
-    result?;
-    Ok(staged)
+    write_content(&mut open.file, bytes, permissions)?;
+    Ok(open)
+}
+
+pub(crate) fn sync_stage(
+    open: OpenStage,
+    batch: &crate::batch_sync::BatchSync,
+) -> std::io::Result<StagedFile> {
+    crate::batch_sync::sync_file(batch, &open.file)?;
+    Ok(open.staged)
 }
 
 fn stage_error(path: &Path, error: std::io::Error) -> std::io::Error {
@@ -108,17 +144,17 @@ fn stage_error(path: &Path, error: std::io::Error) -> std::io::Error {
     error
 }
 
-fn write_staged(
+fn write_content(
     file: &mut std::fs::File,
-    text: &str,
+    bytes: &[u8],
     permissions: Option<std::fs::Permissions>,
 ) -> std::io::Result<()> {
-    file.write_all(text.as_bytes())?;
+    file.write_all(bytes)?;
     failpoint_result("after_stage_write")?;
     if let Some(permissions) = permissions {
         file.set_permissions(permissions)?;
     }
-    file.sync_all()
+    Ok(())
 }
 
 fn existing_permissions(path: &Path) -> std::io::Result<Option<std::fs::Permissions>> {
@@ -145,7 +181,15 @@ fn create_staged(
     options.open(path)
 }
 
-/// Replaces `path` with `text` through a temporary sibling and a rename.
+/// Writes and syncs a temporary sibling, returning its cleanup owner.
+///
+/// # Errors
+/// Returns an error when the directory or file cannot be written.
+pub fn stage(path: &Path, text: &str) -> std::io::Result<StagedFile> {
+    stage_bytes(path, text.as_bytes())
+}
+
+/// Replaces text through a temporary sibling and a rename.
 ///
 /// # Errors
 /// Returns an error when the file cannot be written or renamed.

@@ -1,9 +1,8 @@
 //! Journaled, all-or-nothing file writes shared by apply, undo, and recovery.
 
 use crate::{
-    FileWrite, Operation, OperationState, Store, StoreError,
-    staging::stage_all,
-    write::{StagedFile, failpoint, failpoint_result},
+    FileWrite, Operation, OperationState, Store, StoreError, committing::commit_all,
+    staging::stage_all, write::failpoint,
 };
 use std::path::{Path, PathBuf};
 
@@ -48,10 +47,7 @@ impl Store {
         op.state = OperationState::Applying;
         self.save_operation(op)?;
         failpoint("after_journal");
-        for (index, (target, temp)) in targets.iter().zip(staged).enumerate() {
-            commit(&target.path, temp)?;
-            failpoint_after(index);
-        }
+        commit_all(targets, staged)?;
         op.state = OperationState::Applied;
         self.save_operation(op)
     }
@@ -90,26 +86,7 @@ fn validate_destinations(targets: &[Target]) -> Result<(), StoreError> {
             ));
         }
     }
-    Ok(())
-}
-
-/// Stops after the first rename when the crash-recovery failpoint is armed.
-fn failpoint_after(index: usize) {
-    if index == 0 {
-        failpoint("after_first_rename");
-    }
-}
-
-/// Moves a staged file into place, or deletes the file when nothing is staged.
-fn commit(path: &Path, staged: Option<StagedFile>) -> std::io::Result<()> {
-    failpoint_result("before_commit")?;
-    match staged {
-        Some(temp) => temp.commit(path),
-        None => match std::fs::remove_file(path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            other => other,
-        },
-    }
+    reject_dependencies(&paths)
 }
 
 /// Reads a file's text and fingerprint, or `None` when it does not exist.
@@ -125,4 +102,18 @@ pub fn read_current(path: &Path) -> Result<(Option<String>, Option<String>), Sto
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok((None, None)),
         Err(error) => Err(error.into()),
     }
+}
+
+fn reject_dependencies(paths: &std::collections::BTreeSet<PathBuf>) -> Result<(), StoreError> {
+    let nested = paths.iter().any(|path| {
+        path.ancestors()
+            .skip(1)
+            .any(|parent| paths.contains(parent))
+    });
+    if nested {
+        return Err(StoreError::Invalid(
+            "a planned file destination contains another destination; plan again".into(),
+        ));
+    }
+    Ok(())
 }

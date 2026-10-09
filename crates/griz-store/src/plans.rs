@@ -89,21 +89,14 @@ impl Store {
         plan: Plan,
         selected_from: Option<String>,
     ) -> Result<PlanRecord, StoreError> {
-        let files = plan
-            .files
-            .iter()
-            .map(|file| self.file_record(file))
-            .collect::<Result<_, _>>()?;
+        self.persist_plan_blobs(&plan)?;
+        let files = plan.files.iter().map(file_record).collect();
         let confidence = plan.confidence();
-        let put_blob = |text: &str| self.put_blob(text);
         let unchanged_inputs = plan
             .unchanged_inputs
             .into_iter()
-            .map(|(path, text)| {
-                let hash = text.as_deref().map(put_blob).transpose()?;
-                Ok((path, hash))
-            })
-            .collect::<Result<_, StoreError>>()?;
+            .map(|(path, text)| (path, text.as_deref().map(griz_core::content_hash)))
+            .collect();
         let record = PlanRecord {
             id: new_id("plan"),
             purpose: purpose.to_string(),
@@ -118,21 +111,6 @@ impl Store {
         };
         self.insert_plan(&record)?;
         Ok(record)
-    }
-
-    fn file_record(&self, file: &FileChange) -> Result<FileRecord, StoreError> {
-        if let Some(text) = &file.before {
-            self.put_blob(text)?;
-        }
-        if let Some(text) = &file.after {
-            self.put_blob(text)?;
-        }
-        Ok(FileRecord {
-            path: file.path.clone(),
-            kind: file.kind,
-            before_hash: file.before_hash.clone(),
-            after_hash: file.after_hash.clone(),
-        })
     }
 
     fn insert_plan(&self, record: &PlanRecord) -> Result<(), StoreError> {
@@ -270,4 +248,13 @@ fn selected_ops(plan: &PlanRecord, selection: &Selection) -> Vec<Op> {
         .filter(|(_, kept)| kept.by_path && kept.by_edit && kept.by_confidence)
         .map(|(op, _)| op.clone())
         .collect()
+}
+
+fn file_record(file: &FileChange) -> FileRecord {
+    FileRecord {
+        path: file.path.clone(),
+        kind: file.kind,
+        before_hash: file.before_hash.clone(),
+        after_hash: file.after_hash.clone(),
+    }
 }

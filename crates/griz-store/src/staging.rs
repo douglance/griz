@@ -1,60 +1,61 @@
-//! Bounded staging concurrency; source renames remain ordered in execute.
-
+//! Bounded write waves complete before shared device synchronization.
 use crate::{
+    batch_sync::{BatchSync, finish_sync},
     execute::Target,
-    write::{StagedFile, failpoint, failpoint_result, stage_with_id},
+    write::{OpenStage, StagedFile, failpoint, failpoint_result, prepare_bytes, sync_stage},
 };
-use std::{io, thread};
+use std::{io, path::Path};
 
 type Staged = Vec<Option<StagedFile>>;
-type Worker<'scope> = io::Result<thread::ScopedJoinHandle<'scope, io::Result<Staged>>>;
 
-/// Waits for every stage and its sync before returning any batch to the journal.
+pub(crate) struct FileStage<'a> {
+    pub(crate) path: &'a Path,
+    pub(crate) bytes: Option<&'a [u8]>,
+}
+
 pub(crate) fn stage_all(targets: &[Target]) -> io::Result<Staged> {
-    // Preserve case equivalence in the names checked by exclusive staging.
-    let batch = uuid::Uuid::now_v7();
-    let writes = targets
+    let files: Vec<_> = targets
         .iter()
-        .filter(|target| target.text.is_some())
-        .take(32)
-        .count();
-    if writes < 32 {
-        return stage_slice(targets, 0, batch);
-    }
-    let size = targets.len().div_ceil(4);
-    thread::scope(|scope| {
-        let workers: Vec<_> = targets
-            .chunks(size)
-            .enumerate()
-            .map(|(index, chunk)| {
-                thread::Builder::new()
-                    .spawn_scoped(scope, move || stage_slice(chunk, index * size, batch))
-            })
-            .collect();
-        let results: Vec<_> = workers.into_iter().map(join_worker).collect();
-        let batches = results.into_iter().collect::<io::Result<Vec<_>>>()?;
-        Ok(batches.into_iter().flatten().collect())
-    })
-}
-
-fn join_worker(worker: Worker<'_>) -> io::Result<Staged> {
-    worker?
-        .join()
-        .map_err(|_| io::Error::other("staging worker panicked"))?
-}
-
-fn stage_slice(targets: &[Target], start: usize, batch: uuid::Uuid) -> io::Result<Staged> {
-    let mut staged = Vec::with_capacity(targets.len());
-    for (offset, target) in targets.iter().enumerate() {
-        let temp = target
-            .text
-            .as_deref()
-            .map(|text| stage_with_id(&target.path, text, batch))
-            .transpose()?;
-        staged.push(temp);
-        mid_stage_failpoint(start + offset)?;
-    }
+        .map(|target| FileStage {
+            path: &target.path,
+            bytes: target.text.as_deref().map(str::as_bytes),
+        })
+        .collect();
+    let staged = stage_files(&files)?;
+    reject_directory_destinations(targets)?;
     Ok(staged)
+}
+
+pub(crate) fn stage_files(targets: &[FileStage<'_>]) -> io::Result<Staged> {
+    let sync = BatchSync::default();
+    let batch = uuid::Uuid::now_v7();
+    let mut staged = Vec::with_capacity(targets.len());
+    for (index, wave) in targets.chunks(16).enumerate() {
+        let mut open = prepare_wave(wave, index * 16, batch)?;
+        let ready = crate::parallel::map(&mut open, |file| {
+            file.take().map(|open| sync_stage(open, &sync)).transpose()
+        })?;
+        staged.extend(ready);
+    }
+    finish_sync(&sync)?;
+    Ok(staged)
+}
+
+fn prepare_wave(
+    targets: &[FileStage<'_>],
+    start: usize,
+    batch: uuid::Uuid,
+) -> io::Result<Vec<Option<OpenStage>>> {
+    let Some((first, rest)) = targets.split_first() else {
+        return Ok(Vec::new());
+    };
+    let mut open = vec![prepare_target(first, batch)?];
+    mid_stage_failpoint(start)?;
+    let mut remaining: Vec<_> = rest.iter().collect();
+    open.extend(crate::parallel::map(&mut remaining, |target| {
+        prepare_target(target, batch)
+    })?);
+    Ok(open)
 }
 
 fn mid_stage_failpoint(index: usize) -> io::Result<()> {
@@ -63,4 +64,28 @@ fn mid_stage_failpoint(index: usize) -> io::Result<()> {
         failpoint_result("mid_stage_error")?;
     }
     Ok(())
+}
+
+fn reject_directory_destinations(targets: &[Target]) -> io::Result<()> {
+    for target in targets {
+        match std::fs::metadata(&target.path) {
+            Ok(metadata) if metadata.is_dir() => {
+                return Err(io::Error::new(
+                    io::ErrorKind::IsADirectory,
+                    "a planned file destination became a directory during staging",
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+fn prepare_target(target: &FileStage<'_>, batch: uuid::Uuid) -> io::Result<Option<OpenStage>> {
+    target
+        .bytes
+        .map(|bytes| prepare_bytes(target.path, bytes, batch))
+        .transpose()
 }

@@ -934,12 +934,13 @@ dependencies = [
 
 [[package]]
 name = "griz"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "griz-core",
  "griz-store",
  "incurs",
  "regex",
+ "rusqlite",
  "rustix 0.38.44",
  "schemars",
  "serde",
@@ -950,7 +951,7 @@ dependencies = [
 
 [[package]]
 name = "griz-core"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "ast-grep-core",
  "ast-grep-language",
@@ -969,11 +970,12 @@ dependencies = [
 
 [[package]]
 name = "griz-store"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "dirs",
  "griz-core",
  "rusqlite",
+ "rustix 1.1.5",
  "schemars",
  "serde",
  "serde_json",
@@ -3284,7 +3286,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xtask"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "proc-macro2",

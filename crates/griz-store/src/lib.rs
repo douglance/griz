@@ -6,7 +6,10 @@
 
 mod absorb;
 mod apply;
+mod batch_sync;
+mod blob_batch;
 mod blobs;
+mod committing;
 mod db;
 mod error;
 mod execute;
@@ -14,6 +17,7 @@ mod journal;
 mod listing;
 mod locks;
 mod merge;
+mod parallel;
 mod paths;
 mod plans;
 mod receipts;

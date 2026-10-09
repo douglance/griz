@@ -24,5 +24,10 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Verify observed batch synchronization
+        if: runner.os == 'macOS'
+        run: |
+          clang -dynamiclib -Wall -Wextra -Werror crates/griz/examples/trace_write_sync.c -o /tmp/griz-sync-observer.dylib
+          python3 crates/griz/examples/verify_write_sync.py --binary target/debug/griz --library /tmp/griz-sync-observer.dylib --blob-groups --rename-errors
       - run: cargo xtask check
       - run: cargo publish --dry-run --workspace
