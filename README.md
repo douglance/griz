@@ -117,9 +117,9 @@ check failure returns the undo verdict too; undo can refuse later file changes.
   A later permission change is retained when undo replaces that file. Newly
   created files, including restores of deleted files, use creation defaults.
 - **Batch work has bounded concurrency.** Snapshot reads use at most four
-  workers. Staging retains at most 16 open files per wave plus one flush
-  descriptor per device, and uses at most four synchronization workers.
-  All stages are synchronized before journaling.
+  workers. Staging uses at most four workers, each with one open stage file,
+  plus one retained flush descriptor per device. All stages are synchronized
+  before journaling.
   Journal entries retain plan order; independent source renames use at most 16
   workers. Workers finish and attempt temporary cleanup before errors return.
 - **Formatters do not break undo.** Run a formatter after `apply`, then
@@ -360,7 +360,7 @@ SHA and cache churn with the ignored `search_stage_measurement` and
 ## Batch write implementation
 
 On Apple platforms, staging synchronizes each file, then requests a full device
-flush after all staging waves finish. Only then can the operation be
+flush after all staging workers finish. Only then can the operation be
 journaled as applying and source files renamed. Independent destinations can
 commit concurrently; every worker finishes before the operation is marked applied.
 Conflicting ancestor/child destinations are refused before journaling. Other
@@ -391,7 +391,7 @@ After:
 +-----------------------+
 | Stage, then fsync     |
 +-----------+-----------+
-            | all waves finish
+            | all workers finish
             v
 +-----------------------+
 | Full sync per device  |

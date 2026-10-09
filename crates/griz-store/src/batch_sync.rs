@@ -30,21 +30,17 @@ pub(crate) fn sync_file(batch: &BatchSync, file: &File) -> io::Result<()> {
     }
 }
 
+#[cfg(target_vendor = "apple")]
 pub(crate) fn finish_sync(batch: &BatchSync) -> io::Result<()> {
-    #[cfg(target_vendor = "apple")]
-    {
-        let devices = batch
-            .devices
-            .lock()
-            .map_err(|_| io::Error::other("batch sync lock poisoned"))?;
-        for file in devices.values() {
-            crate::write::failpoint_result("before_batch_full_sync")?;
-            file.sync_all()?;
-            crate::write::failpoint_result("after_batch_full_sync")?;
-        }
+    let devices = batch
+        .devices
+        .lock()
+        .map_err(|_| io::Error::other("batch sync lock poisoned"))?;
+    for file in devices.values() {
+        crate::write::failpoint_result("before_batch_full_sync")?;
+        file.sync_all()?;
+        crate::write::failpoint_result("after_batch_full_sync")?;
     }
-    #[cfg(not(target_vendor = "apple"))]
-    let _ = batch;
     Ok(())
 }
 

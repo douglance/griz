@@ -1,6 +1,8 @@
-//! Bounded write waves complete before shared device synchronization.
+//! Bounded staging workers complete before shared device synchronization.
+#[cfg(target_vendor = "apple")]
+use crate::batch_sync::finish_sync;
 use crate::{
-    batch_sync::{BatchSync, finish_sync},
+    batch_sync::BatchSync,
     execute::Target,
     write::{OpenStage, StagedFile, failpoint, failpoint_result, prepare_bytes, sync_stage},
 };
@@ -27,35 +29,31 @@ pub(crate) fn stage_all(targets: &[Target]) -> io::Result<Staged> {
 }
 
 pub(crate) fn stage_files(targets: &[FileStage<'_>]) -> io::Result<Staged> {
+    let Some((first, rest)) = targets.split_first() else {
+        return Ok(Vec::new());
+    };
     let sync = BatchSync::default();
     let batch = uuid::Uuid::now_v7();
-    let mut staged = Vec::with_capacity(targets.len());
-    for (index, wave) in targets.chunks(16).enumerate() {
-        let mut open = prepare_wave(wave, index * 16, batch)?;
-        let ready = crate::parallel::map(&mut open, |file| {
-            file.take().map(|open| sync_stage(open, &sync)).transpose()
-        })?;
-        staged.extend(ready);
-    }
+    let open = prepare_target(first, batch)?;
+    mid_stage_failpoint(0)?;
+    let mut staged = vec![open.map(|open| sync_stage(open, &sync)).transpose()?];
+    let mut remaining: Vec<_> = rest.iter().collect();
+    staged.extend(crate::parallel::map(&mut remaining, |target| {
+        stage_target(target, batch, &sync)
+    })?);
+    #[cfg(target_vendor = "apple")]
     finish_sync(&sync)?;
     Ok(staged)
 }
 
-fn prepare_wave(
-    targets: &[FileStage<'_>],
-    start: usize,
+fn stage_target(
+    target: &FileStage<'_>,
     batch: uuid::Uuid,
-) -> io::Result<Vec<Option<OpenStage>>> {
-    let Some((first, rest)) = targets.split_first() else {
-        return Ok(Vec::new());
-    };
-    let mut open = vec![prepare_target(first, batch)?];
-    mid_stage_failpoint(start)?;
-    let mut remaining: Vec<_> = rest.iter().collect();
-    open.extend(crate::parallel::map(&mut remaining, |target| {
-        prepare_target(target, batch)
-    })?);
-    Ok(open)
+    sync: &BatchSync,
+) -> io::Result<Option<StagedFile>> {
+    prepare_target(target, batch)?
+        .map(|open| sync_stage(open, sync))
+        .transpose()
 }
 
 fn mid_stage_failpoint(index: usize) -> io::Result<()> {

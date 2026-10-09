@@ -11,6 +11,8 @@ jobs:
   check:
     name: quality (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     strategy:
       fail-fast: false
       matrix:
