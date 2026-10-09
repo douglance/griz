@@ -11,9 +11,11 @@ mod definitions;
 mod diff;
 mod edits;
 mod find;
+mod find_cache;
 mod find_hits;
 mod find_position;
 mod hash;
+mod hash_cache;
 mod matcher;
 mod merge;
 mod model;
@@ -37,7 +39,8 @@ mod workspace_edit_ops;
 pub use definitions::{DiffItem, ItemChange, diff_items};
 pub use diff::{FileDiff, render_diff};
 pub use find::{FileSummary, FindFilesPage, FindPage, FindQuery, Match, find, find_files};
-pub use hash::content_hash;
+pub use hash::{content_hash, content_hash_bytes};
+pub use hash_cache::ContentHashCache;
 pub use merge::{MergeOutcome, three_way};
 pub use model::{
     Anchor, ByteRange, ChangeKind, Confidence, Edit, FileChange, Occurrence, Op, Plan, Problem,

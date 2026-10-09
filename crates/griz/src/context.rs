@@ -59,7 +59,7 @@ pub fn root(explicit: Option<&str>) -> Result<PathBuf, CmdError> {
 /// # Errors
 /// Returns an error when the current directory is unavailable.
 pub fn input_root(explicit: Option<&str>) -> Result<PathBuf, CmdError> {
-    let cwd = std::env::current_dir().map_err(|e| CmdError::invalid(e.to_string()))?;
+    let cwd = crate::request_scope::current_dir().map_err(|e| CmdError::invalid(e.to_string()))?;
     Ok(match explicit {
         Some(root) => input_path(&cwd, Path::new(root)),
         None => cwd,
@@ -156,7 +156,18 @@ fn resolve_op(resolver: &mut PathResolver, root: &Path, mut op: Op) -> Result<Op
 pub async fn with_store<T: Send + 'static>(
     work: impl FnOnce(&Store) -> Result<T, CmdError> + Send + 'static,
 ) -> Result<T, CmdError> {
-    tokio::task::spawn_blocking(move || work(&Store::open_default()?))
+    with_blocking(move || work(&Store::open_default()?)).await
+}
+
+/// Runs blocking file or store work without blocking the async runtime.
+///
+/// # Errors
+/// Returns the work's error, or an error when the worker cannot finish.
+pub async fn with_blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, CmdError> + Send + 'static,
+) -> Result<T, CmdError> {
+    let directory = crate::request_scope::DIRECTORY.try_with(Clone::clone).ok();
+    tokio::task::spawn_blocking(move || crate::request_scope::blocking(directory, work))
         .await
         .map_err(|error| CmdError {
             code: "INTERNAL_ERROR",

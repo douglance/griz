@@ -328,12 +328,42 @@ cargo test -p griz-core --release sparse_byte_search_measurement -- --ignored --
 The measurement checks 64 matches and the final line and character column
 in a 7.34 MB file, then prints the median of nine runs for each query.
 
+SHA-256 fingerprints use CPU acceleration when available. Repeated large
+inputs reuse a digest only after comparing every freshly read byte. The cache
+retains at most 32 MiB of input bytes; this is not a limit on total memory.
+Small literal and regex pages can also reuse match positions after fresh
+fingerprint verification. At most eight pages are retained, each with a JSON
+representation of at most 64 KiB.
+
+On Unix, ordinary CLI reads use a private worker that expires after two idle
+minutes. Each request still walks the requested paths and reads current files.
+MCP serves directly from its own engine process. Cold requests, changed files,
+and working sets larger than the cache still need hashing and scanning.
+
+Compare complete MCP calls against a prior build:
+
+```sh
+python3 crates/griz/examples/measure_search_latency.py \
+  --before /path/to/old/griz --after /path/to/new/griz
+```
+
+This creates an isolated 7.34 MB fixture through griz, alternates both binaries,
+and checks every range, position, capture, and SHA-256 fingerprint. Add
+`--blocks 128 --limit 64 --samples 51` to measure a paged search over 14.68 MB.
+It reports first-request latency separately from repeated-call medians; a warm
+speedup does not describe cold searches. Measure uncached
+SHA and cache churn with the ignored `search_stage_measurement` and
+`cache_churn_measurement` tests in release mode.
+
 ## Use
 
 ```sh
 cargo install griz
 griz --mcp            # MCP server: every command is a direct tool
 ```
+
+Installation places `griz` and its companion `griz-engine` together. Keep both
+binaries in the same directory.
 
 State lives in `$GRIZ_HOME`, or the user data directory. The journal uses schema 2.
 Opening a schema-1 store saves a consistent `*.pre-v2-from-v1-*.sqlite3` backup

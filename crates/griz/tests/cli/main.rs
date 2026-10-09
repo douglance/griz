@@ -27,6 +27,8 @@ mod parallel_stage;
 mod parent_paths;
 mod permissions;
 mod read_address;
+#[cfg(unix)]
+mod reader_worker;
 mod replay;
 mod restore_boundary;
 mod scope;
@@ -39,3 +41,5 @@ mod undo_root_scope;
 mod verbosity;
 mod verdicts;
 mod workspace_replay;
+
+mod find_response;

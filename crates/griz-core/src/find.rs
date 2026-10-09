@@ -5,11 +5,14 @@
 //! same match shape, so an edit built from one kind works for the other.
 
 mod summary;
+mod text;
+
+use text::read as read_text;
 
 pub use summary::{FileSummary, FindFilesPage, find_files};
 
 use crate::{
-    ByteRange, content_hash,
+    ByteRange, content_hash, find_cache,
     find_hits::{FileHits, Matcher},
     find_position::{self, Cursor, to_match},
     scope, structural,
@@ -116,29 +119,35 @@ pub fn find(query: &FindQuery) -> Result<FindPage, String> {
     validate_within(query, &paths)?;
     let mut page = FindPage::default();
     for path in paths {
-        let Some(text) = read_text(&path)? else {
-            continue;
-        };
         let window = (
             query.offset.saturating_sub(page.total),
             query.limit - page.matches.len(),
         );
-        let Some(hits) = find_in_file(&matcher, query, &path, &text, window)? else {
+        let Some(file) = text::page(&matcher, query, &path, window)? else {
             continue;
         };
-        collect_file(&mut page, hits, (&path, &text));
+        page.files += file.files;
+        page.total += file.total;
+        page.matches.extend(file.matches);
     }
     let shown = query.offset + page.matches.len();
     page.next = (shown < page.total).then_some(shown);
     Ok(page)
 }
 
-fn read_text(path: &Path) -> Result<Option<String>, String> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => Ok(Some(text)),
-        Err(error) if error.kind() == std::io::ErrorKind::InvalidData => Ok(None),
-        Err(error) => Err(format!("reading {}: {error}", path.display())),
+fn page_in_file(
+    matcher: &Matcher,
+    query: &FindQuery,
+    path: &Path,
+    text: &str,
+    window: (usize, usize),
+) -> Result<FindPage, String> {
+    let mut page = FindPage::default();
+    if let Some(hits) = find_in_file(matcher, query, path, text, window)? {
+        collect_file(&mut page, hits, (path, text));
+        find_cache::remember(query, path, window, &page);
     }
+    Ok(page)
 }
 
 /// Counts in-scope hits and selects this file's portion of the requested page.
