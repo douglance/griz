@@ -4,7 +4,7 @@ use std::{error::Error, fs, path::Path};
 type TestResult = Result<(), Box<dyn Error>>;
 fn uncached(query: &FindQuery) -> Result<FindPage, String> {
     let mut baseline = query.clone();
-    baseline.limit = 129;
+    baseline.limit = 257;
     let mut page = find(&baseline)?;
     page.matches.truncate(query.limit);
     page.next = (query.offset + page.matches.len() < page.total)

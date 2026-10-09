@@ -20,7 +20,7 @@ struct Entry {
     page: FindPage,
 }
 fn key(query: &FindQuery, path: &Path, window: (usize, usize)) -> Option<Key> {
-    if query.pattern.is_some() || !query.within.is_empty() || window.1 == 0 || window.1 > 128 {
+    if query.pattern.is_some() || !query.within.is_empty() || window.1 == 0 || window.1 > 256 {
         return None;
     }
     let expression = query.literal.as_ref().or(query.regex.as_ref())?;

@@ -87,7 +87,7 @@ def measure(sessions, root, count):
     rows = {}
     for mode, expression in [("literal", {"literal": "needle"}), ("regex", {"regex": "(needle)"})]:
         samples = {name: [] for name in sessions}
-        arguments = {"root": str(root), "paths": ["sparse.txt"], "limit": 64, **expression}
+        arguments = {"root": str(root), "paths": ["sparse.txt"], **expression}
         for index in range(count + 1):
             outputs = {}
             for name in (["before", "after"] if index % 2 == 0 else ["after", "before"]):
