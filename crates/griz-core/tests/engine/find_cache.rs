@@ -127,3 +127,29 @@ fn check_query(
 }
 
 const FINAL_BYTE_HASH: &str = "b155210fc1c4be890836235a6e103cd0e06fbd86f5807b9456c2f1283f9c0e6b";
+
+#[test]
+fn cached_page_drops_file_that_becomes_invalid_utf8() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("binary-change.txt");
+    let mut bytes = format!("needle\n{}", ".".repeat(2 * 1024 * 1024)).into_bytes();
+    fs::write(&path, &bytes)?;
+    let query = FindQuery {
+        paths: vec![path.clone()],
+        literal: Some("needle".into()),
+        limit: 1,
+        ..FindQuery::default()
+    };
+    let first = find(&query)?;
+    assert_eq!((first.total, first.files, first.matches.len()), (1, 1, 1));
+    assert_eq!(find(&query)?, first);
+    let last = bytes.last_mut().ok_or("missing final byte")?;
+    *last = 0xff;
+    fs::write(&path, &bytes)?;
+    assert_eq!(find(&query)?, FindPage::default());
+    let last = bytes.last_mut().ok_or("missing final byte")?;
+    *last = b'.';
+    fs::write(&path, &bytes)?;
+    assert_eq!(find(&query)?, first);
+    Ok(())
+}

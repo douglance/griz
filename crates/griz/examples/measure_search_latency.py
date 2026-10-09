@@ -10,7 +10,10 @@ import subprocess
 import tempfile
 import time
 
-EXPECTED_HASH = "095c9f2fc59713d124a55214013a8c80310ba0693a7bf46808809ba5890fddf1"
+EXPECTED_HASH = {
+    64: "095c9f2fc59713d124a55214013a8c80310ba0693a7bf46808809ba5890fddf1",
+    256: "de118d0ad2d3c09e926f136c3d64f3577f9df9b72098ae10e4942b47c7f45677",
+}
 
 
 def cli(binary, argv, root, env, payload=None):
@@ -21,9 +24,9 @@ def cli(binary, argv, root, env, payload=None):
     return json.loads(result.stdout)
 
 
-def fixture(binary, root, env):
+def fixture(binary, root, env, blocks):
     cli(binary, ["find", "--root", str(root), "--literal", "needle"], root, env)
-    text = ("ordinary text with no match\n" * 4096 + "needle\n") * 64
+    text = ("ordinary text with no match\n" * 4096 + "needle\n") * blocks
     plan = cli(binary, [
         "plan", "--root", str(root), "--ops", "@/dev/stdin",
         "--purpose", "Create search benchmark fixture",
@@ -69,9 +72,11 @@ class Mcp:
         self.child.wait(timeout=10)
 
 
-def verify(page, root, mode):
-    assert (page["total"], page["files"], page["next"]) == (64, 1, None), page
-    assert len(page["matches"]) == 64
+def verify(page, root, mode, blocks, limit):
+    shown = min(blocks, limit)
+    next_offset = shown if shown < blocks else None
+    assert (page["total"], page["files"], page["next"]) == (blocks, 1, next_offset), page
+    assert len(page["matches"]) == shown
     for index, match in enumerate(page["matches"]):
         start = index * 114695 + 114688
         assert match["path"] == str(root / "sparse.txt")
@@ -79,15 +84,17 @@ def verify(page, root, mode):
         assert (match["line"], match["column"], match["text"]) == (
             (index + 1) * 4097, 1, "needle",
         )
-        assert match["file_hash"] == EXPECTED_HASH
+        assert match["file_hash"] == EXPECTED_HASH[blocks]
         assert match["captures"] == (["needle"] if mode == "regex" else [])
 
 
-def measure(sessions, root, count):
+def measure(sessions, root, count, blocks, limit):
     rows = {}
     for mode, expression in [("literal", {"literal": "needle"}), ("regex", {"regex": "(needle)"})]:
         samples = {name: [] for name in sessions}
         arguments = {"root": str(root), "paths": ["sparse.txt"], **expression}
+        if limit is not None:
+            arguments["limit"] = limit
         for index in range(count + 1):
             outputs = {}
             for name in (["before", "after"] if index % 2 == 0 else ["after", "before"]):
@@ -96,7 +103,8 @@ def measure(sessions, root, count):
                 samples[name].append(time.perf_counter_ns() - start)
                 assert not reply["result"].get("isError"), reply
                 outputs[name] = json.loads(reply["result"]["content"][0]["text"])
-                verify(outputs[name], root, mode)
+                assert reply["result"]["structuredContent"] == outputs[name]
+                verify(outputs[name], root, mode, blocks, 200 if limit is None else limit)
             assert outputs["before"] == outputs["after"]
         before = statistics.median(samples["before"][1:])
         after = statistics.median(samples["after"][1:])
@@ -114,21 +122,26 @@ def main():
     parser.add_argument("--before", required=True, type=Path)
     parser.add_argument("--after", required=True, type=Path)
     parser.add_argument("--samples", type=int, default=21)
+    parser.add_argument("--blocks", type=int, choices=[64, 256], default=64)
+    parser.add_argument("--limit", type=int)
     args = parser.parse_args()
     if args.samples < 3:
         parser.error("--samples must be at least 3")
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be positive")
     with tempfile.TemporaryDirectory(prefix="griz-search-benchmark-") as directory:
         root = Path(directory).resolve()
         env = {**os.environ, "GRIZ_HOME": str(root / "state"),
                "XDG_DATA_HOME": str(root / "data"), "GRIZ_READER_IDLE_MS": "200"}
         before, after = str(args.before.resolve()), str(args.after.resolve())
-        fixture(after, root, env)
+        fixture(after, root, env, args.blocks)
         sessions = {}
         try:
             sessions["before"] = Mcp(before, root, env)
             sessions["after"] = Mcp(after, root, env)
-            rows = measure(sessions, root, args.samples)
-            print(json.dumps({"bytes": 7340480, "samples": args.samples, "mcp": rows}, indent=2))
+            rows = measure(sessions, root, args.samples, args.blocks, args.limit)
+            print(json.dumps({"bytes": 114695 * args.blocks, "samples": args.samples,
+                              "limit": 200 if args.limit is None else args.limit, "mcp": rows}, indent=2))
         finally:
             for session in sessions.values():
                 session.close()

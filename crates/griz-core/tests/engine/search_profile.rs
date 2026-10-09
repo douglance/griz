@@ -1,7 +1,7 @@
 //! Stage timings for complete searches with unchanged result checks.
 
 use griz_core::{ContentHashCache, FindQuery, content_hash, find};
-use std::{error::Error, fs, hint::black_box, time::Instant};
+use std::{error::Error, fs, hint::black_box, io::Read, time::Instant};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -37,6 +37,7 @@ fn search_stage_measurement() -> TestResult {
     };
     measure_cold(&query)?;
     measure("read", 7_340_480, || Ok(fs::read_to_string(&path)?.len()))?;
+    measure_reused_read(&path)?;
     measure("sha256_warm", 64, || {
         let hash = content_hash(black_box(&text));
         assert_eq!(hash, EXPECTED_HASH);
@@ -96,4 +97,14 @@ fn measure_cold(query: &FindQuery) -> TestResult {
     );
     println!("profile stage=find_literal_cold elapsed_ns={elapsed}");
     Ok(())
+}
+
+fn measure_reused_read(path: &std::path::Path) -> TestResult {
+    let mut text = String::new();
+    measure("read_reused", 7_340_480, || {
+        text.clear();
+        fs::File::open(path)?.read_to_string(&mut text)?;
+        assert_eq!(text.as_bytes().last(), Some(&b'\n'));
+        Ok(text.len())
+    })
 }

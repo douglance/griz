@@ -4,10 +4,10 @@ use crate::{
     annotations,
     cmd_plan::resolve_all,
     context::{CmdError, resolve, root, with_blocking},
+    find_response::{self, FindResponse},
     lines::{Address, address, merge_lines},
-    verdict::{Outcome, unmet},
 };
-use griz_core::{FindQuery, content_hash, find, find_files};
+use griz_core::{FindQuery, content_hash};
 use incurs::command::{CommandDef, TypedContext, TypedResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -107,7 +107,7 @@ struct FindOptions {
 
 /// The `find` command.
 pub fn find_command() -> CommandDef {
-    CommandDef::typed::<(), FindOptions, (), Value, _, _>(
+    let mut command = CommandDef::typed::<(), FindOptions, (), FindResponse, _, _>(
         "find",
         |ctx: TypedContext<(), FindOptions, ()>| async move {
             with_blocking(move || run_find(ctx.options))
@@ -119,18 +119,9 @@ pub fn find_command() -> CommandDef {
     .examples(crate::usage::example("--root /path/to/repo --paths \"src one.rs\" --paths \"src two.rs\" --literal oldName --expect-matches 2 --format json", "Find an expected number of matches."))
     .hint(crate::usage::PATHS)
     .mcp(annotations::read_only())
-    .done()
-}
-
-fn find_response(query: &FindQuery, files_only: bool) -> Result<(Value, usize), CmdError> {
-    let (body, total) = if files_only {
-        let page = find_files(query).map_err(CmdError::invalid)?;
-        (serde_json::to_value(&page), page.total)
-    } else {
-        let page = find(query).map_err(CmdError::invalid)?;
-        (serde_json::to_value(&page), page.total)
-    };
-    Ok((body.map_err(|e| CmdError::invalid(e.to_string()))?, total))
+    .done();
+    command.output_schema = serde_json::to_value(schemars::schema_for!(Value)).ok();
+    command
 }
 
 fn validate_search_paths(root: &Path, paths: &[String]) -> Result<(), CmdError> {
@@ -146,7 +137,7 @@ fn validate_search_paths(root: &Path, paths: &[String]) -> Result<(), CmdError> 
     Ok(())
 }
 
-fn run_find(options: FindOptions) -> Result<TypedResult<Value>, CmdError> {
+fn run_find(options: FindOptions) -> Result<TypedResult<FindResponse>, CmdError> {
     let root = root(options.root.as_deref())?;
     validate_search_paths(&root, options.paths.as_deref().unwrap_or_default())?;
     let mut paths = resolve_all(&root, options.paths)?;
@@ -164,19 +155,12 @@ fn run_find(options: FindOptions) -> Result<TypedResult<Value>, CmdError> {
         limit: options.limit,
         within: options.within.unwrap_or_default(),
     };
-    let (mut body, total) = find_response(&query, options.files_only)?;
+    let (body, total) = find_response::search(&query, options.files_only)?;
     let Some(expected) = options.expect_matches else {
         return Ok(TypedResult::ok(body));
     };
-    let miss = unmet("matches", Some(expected), total);
-    let outcome = if miss.is_some() {
-        Outcome::Failed
-    } else {
-        Outcome::Passed
-    };
-    body["outcome"] = json!(outcome);
-    if let Some(reason) = miss {
-        body["reason"] = json!(reason);
+    let (body, failed) = find_response::with_expectation(body, expected, total);
+    if failed {
         return Ok(TypedResult::ok_with_exit_code(body, 1));
     }
     Ok(TypedResult::ok(body))

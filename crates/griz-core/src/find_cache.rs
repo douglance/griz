@@ -1,5 +1,5 @@
 //! Bounded search-page reuse, validated against freshly read file contents.
-use crate::{FindPage, FindQuery, content_hash};
+use crate::{FindPage, FindQuery, content_hash_bytes};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -37,7 +37,7 @@ fn key(query: &FindQuery, path: &Path, window: (usize, usize)) -> Option<Key> {
 pub(crate) fn lookup(
     query: &FindQuery,
     path: &Path,
-    text: &str,
+    bytes: &[u8],
     window: (usize, usize),
 ) -> Option<FindPage> {
     let key = key(query, path, window)?;
@@ -50,7 +50,7 @@ pub(crate) fn lookup(
         .page
         .clone();
     let expected = &page.matches.first()?.file_hash;
-    (content_hash(text) == *expected).then_some(page)
+    (content_hash_bytes(bytes) == *expected).then_some(page)
 }
 pub(crate) fn remember(query: &FindQuery, path: &Path, window: (usize, usize), page: &FindPage) {
     let Some(key) = key(query, path, window) else {

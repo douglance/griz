@@ -11,6 +11,7 @@ mod cmd_inspect;
 mod cmd_plan;
 mod cmd_read;
 mod context;
+mod find_response;
 mod lines;
 mod path_filters;
 mod plan_input;
