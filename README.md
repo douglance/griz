@@ -310,6 +310,24 @@ fixture/check setup. The shell baseline has no snapshot guard or journal;
 these measurements compare successful edits, not equivalent recovery guarantees.
 Absolute command paths and generated IDs affect the counts.
 
+## Search implementation
+
+Literal queries use a reusable byte substring finder. Match positions count
+newlines with memchr, then count characters only after the last newline.
+These byte-oriented scans are inspired by
+[fsearch's content search](https://github.com/noahdunnagan/fsearch/blob/main/src/content.rs).
+Returned ranges, scopes, pagination, and fingerprints still come from freshly
+read text.
+
+Measure sparse literal and capturing-regex searches locally:
+
+```sh
+cargo test -p griz-core --release sparse_byte_search_measurement -- --ignored --nocapture
+```
+
+The measurement checks 64 matches and the final line and character column
+in a 7.34 MB file, then prints the median of nine runs for each query.
+
 ## Use
 
 ```sh

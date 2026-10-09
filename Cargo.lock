@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "griz"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "griz-core",
  "griz-store",
@@ -949,12 +949,13 @@ dependencies = [
 
 [[package]]
 name = "griz-core"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "ast-grep-core",
  "ast-grep-language",
  "diffy",
  "ignore",
+ "memchr",
  "regex",
  "schemars",
  "serde",
@@ -967,7 +968,7 @@ dependencies = [
 
 [[package]]
 name = "griz-store"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "dirs",
  "griz-core",
@@ -3272,7 +3273,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xtask"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "proc-macro2",
