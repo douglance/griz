@@ -19,13 +19,13 @@ pub(crate) fn position(cursor: &mut Cursor, text: &str, byte: usize) -> (usize, 
     if byte < cursor.byte {
         *cursor = Cursor::default();
     }
-    for ch in text[cursor.byte..byte].chars() {
-        if ch == '\n' {
-            cursor.line += 1;
-            cursor.column = 0;
-        } else {
-            cursor.column += 1;
-        }
+    let skipped = &text[cursor.byte..byte];
+    let mut newlines = memchr::memchr_iter(b'\n', skipped.as_bytes());
+    if let Some(last) = newlines.next_back() {
+        cursor.line += newlines.count() + 1;
+        cursor.column = skipped[last + 1..].chars().count();
+    } else {
+        cursor.column += skipped.chars().count();
     }
     cursor.byte = byte;
     (cursor.line + 1, cursor.column + 1)

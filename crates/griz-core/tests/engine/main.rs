@@ -8,6 +8,7 @@ mod definition_throughput;
 mod definitions;
 mod diff_merge;
 mod find;
+mod find_bytes;
 mod find_count;
 mod find_io;
 mod find_paging;

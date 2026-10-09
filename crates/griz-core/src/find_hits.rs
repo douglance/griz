@@ -4,6 +4,7 @@ use crate::{
     find::{FindQuery, Hit},
     structural::Shape,
 };
+use memchr::memmem::Finder;
 use regex::{Captures, Regex};
 use std::{collections::BTreeMap, ops::Range, path::Path};
 
@@ -14,6 +15,7 @@ pub(crate) struct FileHits {
 }
 
 pub(crate) enum Matcher {
+    Literal(Finder<'static>),
     Text(Regex),
     Shape(Shape),
 }
@@ -21,7 +23,7 @@ pub(crate) enum Matcher {
 impl Matcher {
     pub(crate) fn new(query: &FindQuery) -> Result<Self, String> {
         match (&query.literal, &query.regex, &query.pattern) {
-            (Some(literal), None, None) => text(&regex::escape(literal)),
+            (Some(literal), None, None) => literal_matcher(literal),
             (None, Some(regex), None) => text(regex),
             (None, None, Some(pattern)) => {
                 Shape::new(pattern, query.language.as_deref()).map(Self::Shape)
@@ -38,6 +40,7 @@ impl Matcher {
         window: (usize, usize),
     ) -> Result<FileHits, String> {
         match self {
+            Self::Literal(finder) => Ok(literal_hits(finder, text, spans, window)),
             Self::Text(regex) => Ok(text_hits(regex, text, spans, window)),
             Self::Shape(shape) => {
                 let hits = shape.hits(path, text)?;
@@ -46,6 +49,29 @@ impl Matcher {
             }
         }
     }
+}
+
+fn literal_matcher(source: &str) -> Result<Matcher, String> {
+    if source.is_empty() {
+        return Err("the pattern is empty".to_string());
+    }
+    Ok(Matcher::Literal(
+        Finder::new(source.as_bytes()).into_owned(),
+    ))
+}
+
+fn literal_hits(
+    finder: &Finder<'_>,
+    text: &str,
+    spans: Option<&[Range<usize>]>,
+    window: (usize, usize),
+) -> FileHits {
+    let length = finder.needle().len();
+    let hits = finder
+        .find_iter(text.as_bytes())
+        .map(|start| start..start + length)
+        .filter(|range| within(spans, range));
+    select(hits, window, plain_hit)
 }
 
 fn text(source: &str) -> Result<Matcher, String> {
