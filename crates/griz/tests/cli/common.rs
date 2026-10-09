@@ -58,7 +58,8 @@ impl Griz {
             .env("GRIZ_HOME", self.home.path())
             .env("XDG_DATA_HOME", self.home.path().join("xdg"))
             .env_remove("GRIZ_VERBOSITY")
-            .env_remove("GRIZ_FAILPOINT");
+            .env_remove("GRIZ_FAILPOINT")
+            .env("GRIZ_READER_IDLE_MS", "200");
         command
     }
 

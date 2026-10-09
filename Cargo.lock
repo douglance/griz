@@ -934,12 +934,13 @@ dependencies = [
 
 [[package]]
 name = "griz"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "griz-core",
  "griz-store",
  "incurs",
  "regex",
+ "rustix 0.38.44",
  "schemars",
  "serde",
  "serde_json",
@@ -949,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "griz-core"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "ast-grep-core",
  "ast-grep-language",
@@ -968,7 +969,7 @@ dependencies = [
 
 [[package]]
 name = "griz-store"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "dirs",
  "griz-core",
@@ -2154,6 +2155,16 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest",
+ "sha2-asm",
+]
+
+[[package]]
+name = "sha2-asm"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b845214d6175804686b2bd482bcffe96651bb2d1200742b712003504a2dac1ab"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -3273,7 +3284,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xtask"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anyhow",
  "proc-macro2",

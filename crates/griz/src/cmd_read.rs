@@ -3,7 +3,7 @@
 use crate::{
     annotations,
     cmd_plan::resolve_all,
-    context::{CmdError, resolve, root},
+    context::{CmdError, resolve, root, with_blocking},
     lines::{Address, address, merge_lines},
     verdict::{Outcome, unmet},
 };
@@ -37,7 +37,9 @@ pub fn read_command() -> CommandDef {
     CommandDef::typed::<PathArgs, ReadOptions, (), Value, _, _>(
         "read",
         |ctx: TypedContext<PathArgs, ReadOptions, ()>| async move {
-            read(&ctx.args.path, ctx.options).unwrap_or_else(CmdError::result)
+            with_blocking(move || read(&ctx.args.path, ctx.options))
+                .await
+                .unwrap_or_else(CmdError::result)
         },
     )
     .description("Read a file as numbered lines with its fingerprint. Pass the fingerprint as expect_hash to make an edit refuse a changed file.")
@@ -108,7 +110,9 @@ pub fn find_command() -> CommandDef {
     CommandDef::typed::<(), FindOptions, (), Value, _, _>(
         "find",
         |ctx: TypedContext<(), FindOptions, ()>| async move {
-            run_find(ctx.options).unwrap_or_else(CmdError::result)
+            with_blocking(move || run_find(ctx.options))
+                .await
+                .unwrap_or_else(CmdError::result)
         },
     )
     .description("Find literal, regex, or structural matches with byte ranges and file fingerprints. Use files-only for per-file counts and fingerprints instead of individual matches.")

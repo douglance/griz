@@ -27,6 +27,8 @@ mod parallel_stage;
 mod parent_paths;
 mod permissions;
 mod read_address;
+#[cfg(unix)]
+mod reader_worker;
 mod replay;
 mod restore_boundary;
 mod scope;

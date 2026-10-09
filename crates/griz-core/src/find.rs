@@ -9,7 +9,7 @@ mod summary;
 pub use summary::{FileSummary, FindFilesPage, find_files};
 
 use crate::{
-    ByteRange, content_hash,
+    ByteRange, content_hash, find_cache,
     find_hits::{FileHits, Matcher},
     find_position::{self, Cursor, to_match},
     scope, structural,
@@ -123,13 +123,31 @@ pub fn find(query: &FindQuery) -> Result<FindPage, String> {
             query.offset.saturating_sub(page.total),
             query.limit - page.matches.len(),
         );
-        let Some(hits) = find_in_file(&matcher, query, &path, &text, window)? else {
-            continue;
-        };
-        collect_file(&mut page, hits, (&path, &text));
+        let file = page_in_file(&matcher, query, &path, &text, window)?;
+        page.files += file.files;
+        page.total += file.total;
+        page.matches.extend(file.matches);
     }
     let shown = query.offset + page.matches.len();
     page.next = (shown < page.total).then_some(shown);
+    Ok(page)
+}
+
+fn page_in_file(
+    matcher: &Matcher,
+    query: &FindQuery,
+    path: &Path,
+    text: &str,
+    window: (usize, usize),
+) -> Result<FindPage, String> {
+    if let Some(page) = find_cache::lookup(query, path, text, window) {
+        return Ok(page);
+    }
+    let mut page = FindPage::default();
+    if let Some(hits) = find_in_file(matcher, query, path, text, window)? {
+        collect_file(&mut page, hits, (path, text));
+        find_cache::remember(query, path, window, &page);
+    }
     Ok(page)
 }
 
